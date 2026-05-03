@@ -496,21 +496,21 @@ window.renderScheduleAdmin = () => {
     let opts = '';
     for (let r = 1; r <= 3; r++) for (let l = 1; l <= 6; l++) {
        const v = r+'-'+l;
-       opts += \`<option value="\${v}" \${s.class===v?'selected':''}>فصل \${v}</option>\`;
+       opts += `<option value="${v}" ${s.class===v?'selected':''}>فصل ${v}</option>`;
     }
-    html += \`
+    html += `
       <div class="scard" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-        <div style="font-size:1.2rem; font-weight:800; width:100px; color:var(--gold);"><i class="fas fa-calendar-day"></i> \${days[i]}</div>
+        <div style="font-size:1.2rem; font-weight:800; width:100px; color:var(--gold);"><i class="fas fa-calendar-day"></i> ${days[i]}</div>
         <div class="fg" style="flex:1; min-width:150px;">
           <label>الفصل المخصص</label>
-          <select id="schClass_\${i}" class="input-field">\${opts}</select>
+          <select id="schClass_${i}" class="input-field">${opts}</select>
         </div>
         <div class="fg" style="flex:1; min-width:150px;">
           <label>كلمة المرور للفصل</label>
-          <input type="text" id="schPw_\${i}" class="input-field" value="\${s.pw}">
+          <input type="text" id="schPw_${i}" class="input-field" value="${s.pw}">
         </div>
       </div>
-    \`;
+    `;
   }
   grid.innerHTML = html;
 };
@@ -519,8 +519,8 @@ window.saveSchedule = () => {
   const newSch = {};
   for(let i=0; i<5; i++) {
     newSch[i] = {
-      class: $(\`schClass_\${i}\`).value,
-      pw: $(\`schPw_\${i}\`).value
+      class: $(`schClass_${i}`).value,
+      pw: $(`schPw_${i}`).value
     };
   }
   cloudSave('schedule', newSch).then(() => alert('تم حفظ الجدول وكلمات المرور بنجاح!'));

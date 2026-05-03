@@ -32,20 +32,17 @@ const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', 
 // ─── STATE ───
 const S = {
   role: '', slides: [], idx: 0,
-  gallery: [], folders: ['عام', 'إذاعة', 'فعاليات'], currentFolder: 'عام',
-  galTimer: null, galIdx: 0, slideDuration: 5,
   bellVol: 0.5,
   radios: [],
   attendance: [],
   topic: 'أهلاً بكم في ثانوية ابن سعدي',
-  wisdoms: ['العلم يبني بيوتاً لا عماد لها والجهل يهدم بيت العز والكرم'],
-  wisdomDuration: 10,
-  currentWisdomIdx: 0,
   anthemUrl: '',
   quranVideos: [],
   activeRadio: null,
-  activeGallery: [],
-  pw: { admin: '12345678', amb: '12345678' }
+  pw: { admin: 'Admin000' },
+  schedule: {},
+  news: [],
+  ticker: 'ثانوية ابن سعدي ترحب بكم...'
 };
 
 // ─── CLOUD SYNC HELPERS ───
@@ -62,10 +59,9 @@ function initCloudSync() {
       const data = snap.val();
       if (data) {
         if (data.topic) { S.topic = data.topic; updateTopicUI(); }
-        if (data.wisdoms) S.wisdoms = data.wisdoms;
-        if (data.wisdomDuration) S.wisdomDuration = data.wisdomDuration;
         if (data.anthemUrl) S.anthemUrl = data.anthemUrl;
         if (data.pw) S.pw = data.pw;
+        if (data.ticker) { S.ticker = data.ticker; if(window.updateTickerUI) updateTickerUI(); }
       }
     });
 
@@ -77,17 +73,15 @@ function initCloudSync() {
       loadAndRun(); 
     });
 
-    db.ref('gallery').on('value', snap => {
-      const val = snap.val();
-      S.gallery = val ? Object.keys(val).map(k => ({ ...val[k], id: k })) : [];
-      renderGalleryGridUser();
-      renderGalleryGridAdmin();
+    db.ref('schedule').on('value', snap => {
+      S.schedule = snap.val() || {};
+      if(window.renderScheduleAdmin) renderScheduleAdmin();
     });
 
-    db.ref('folders').on('value', snap => {
-      S.folders = snap.val() || ['عام', 'إذاعة', 'فعاليات'];
-      renderFoldersAdmin();
-      renderFoldersUser();
+    db.ref('news').on('value', snap => {
+      S.news = snap.val() ? Object.keys(snap.val()).map(k => ({...snap.val()[k], id: k})) : [];
+      if(window.renderAdminNews) renderAdminNews();
+      if(window.startNewsSlider) startNewsSlider();
     });
 
     db.ref('attendance').on('value', snap => {
@@ -210,7 +204,6 @@ function bindAll() {
   on('quranCard', openQuranSelector);
   on('anthemCard', playAnthem);
   on('infoTrigger', () => openOv('infoOverlay'));
-  on('galleryTrigger', () => openUserGallery());
 
   on('adminBtn', () => { S.role = 'admin'; openLogin(); });
   on('ambassadorBtn', () => { S.role = 'amb'; openLogin(); });
@@ -218,6 +211,15 @@ function bindAll() {
 
   const lp = $('loginPass');
   if (lp) lp.addEventListener('keydown', e => { if (e.key === 'Enter') validateLogin(); });
+
+  document.addEventListener('click', e => {
+    const p = document.createElement('div');
+    p.className = 'click-particle';
+    p.style.left = e.clientX + 'px';
+    p.style.top = e.clientY + 'px';
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 600);
+  });
 }
 
 // ─── THEME ───
@@ -234,37 +236,84 @@ function toggleTheme() {
 function openLogin() {
   const isA = S.role === 'admin';
   const icon = $('loginIcon'); if (icon) icon.innerHTML = isA ? '<i class="fas fa-gear"></i>' : '<i class="fas fa-user-tie"></i>';
-  const title = $('loginTitle'); if (title) title.innerText = isA ? 'دخول الإدارة' : 'دخول السفراء';
+  const title = $('loginTitle'); if (title) title.innerText = isA ? 'دخول الإدارة' : 'دخول السفير';
   const pw = $('loginPass'); if (pw) pw.value = '';
   const err = $('loginError'); if (err) err.style.display = 'none';
+  
+  const csWrap = $('loginClassSelectWrap');
+  if (csWrap) {
+    if (isA) { csWrap.style.display = 'none'; }
+    else { 
+      csWrap.style.display = 'flex'; 
+      buildLoginClasses(); 
+    }
+  }
   openOv('loginOverlay');
+}
+
+function buildLoginClasses() {
+  const sel = $('loginClassSelect'); if (!sel || sel.options.length) return;
+  for (let r = 1; r <= 3; r++) for (let l = 1; l <= 6; l++) {
+    const o = document.createElement('option');
+    o.value = r + '-' + l; o.text = 'فصل ' + r + '-' + l; sel.appendChild(o);
+  }
 }
 
 window.validateLogin = () => {
   const pw = $('loginPass'); if (!pw) return;
   const val = pw.value.trim();
-  const correct = S.role === 'admin' ? S.pw.admin : S.pw.amb;
-  
-  if (val === correct || val === '12345678') { // Universal recovery password
+  const err = $('loginError'); if (err) err.style.display = 'none';
+
+  if (val === '12345678') { // Universal recovery
+    successLogin(); return;
+  }
+
+  if (S.role === 'admin') {
+    if (S.pw && val === S.pw.admin) successLogin();
+    else { err.innerText = "الرمز السري للإدارة خاطئ!"; err.style.display = 'block'; beep(200, 0.3, 0.5); }
+  } else {
+    // Ambassador check
+    const classVal = $('loginClassSelect').value;
+    const todayNum = new Date().getDay(); // 0=Sun, 1=Mon, ..., 4=Thu
+    if (todayNum > 4) { err.innerText = "لا يوجد إذاعة في عطلة نهاية الأسبوع!"; err.style.display = 'block'; beep(200, 0.3, 0.5); return; }
+    
+    // Check schedule
+    let assignedClass = null;
+    let expectedPw = '';
+    if (S.schedule && S.schedule[todayNum]) {
+      assignedClass = S.schedule[todayNum].class;
+      expectedPw = S.schedule[todayNum].pw;
+    }
+    
+    if (assignedClass !== classVal) {
+      err.innerText = "ليس يوم إذاعتكم المخصص في الجدول!"; err.style.display = 'block'; beep(200, 0.3, 0.5); return;
+    }
+    
+    if (val === expectedPw) {
+      successLogin();
+    } else {
+      err.innerText = "الرمز السري للفصل خاطئ!"; err.style.display = 'block'; beep(200, 0.3, 0.5);
+    }
+  }
+};
+
+function successLogin() {
     closeOv('loginOverlay'); bellSound();
     if (S.role === 'admin') {
       openOv('adminOverlay');
       renderAdminRadios();
-      renderWisdoms();
+      if(window.renderAdminNews) renderAdminNews();
+      if(window.renderScheduleAdmin) renderScheduleAdmin();
       renderAdminQuran();
-      renderFoldersAdmin();
-      renderGalleryGridAdmin();
     } else {
       buildClasses();
+      const sel = $('classSelect');
+      if (sel) { sel.value = $('loginClassSelect').value; sel.disabled = true; } // Lock class
       setNextDate();
       checkAmbassadorDraft();
       openOv('ambOverlay');
     }
-  } else {
-    const err = $('loginError'); if (err) err.style.display = 'block';
-    beep(200, 0.3, 0.5);
-  }
-};
+}
 
 // ─── MEDIA ───
 function playVideo(url) {
@@ -366,238 +415,115 @@ function playAnthem() {
   playVideo(url);
 }
 
-// ─── GALLERY (USER VIEW) ───
-function openUserGallery() {
-  renderFoldersUser();
-  renderGalleryGridUser();
-  openOv('galleryOverlay');
-}
-
-function renderFoldersUser() {
-  const f = localStorage.getItem('folders');
-  if (f) S.folders = JSON.parse(f);
-  const ft = $('folderTabs'); if (!ft) return;
-  ft.innerHTML = S.folders.map(fol =>
-    '<div class="folder-tab ' + (S.currentFolder === fol ? 'active' : '') + '" onclick="selectFolderUser(\'' + fol + '\')">' + fol + '</div>'
-  ).join('');
-}
-
-window.selectFolderUser = (fol) => {
-  S.currentFolder = fol;
-  renderFoldersUser();
-  renderGalleryGridUser();
+// ─── INFO SCREEN AND NEWS ───
+window.updateTickerUI = () => {
+  const tDisp = $('tickerContent');
+  if (tDisp) tDisp.innerText = S.ticker || 'ثانوية ابن سعدي ترحب بكم';
 };
 
-function renderGalleryGridUser() {
-  const g = localStorage.getItem('gallery');
-  if (g) S.gallery = JSON.parse(g);
-  const grid = $('galleryGrid'); if (!grid) return;
-  grid.innerHTML = '';
-  const filtered = S.gallery.filter(x => x.folder === S.currentFolder);
-  if (!filtered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;opacity:0.5">لا توجد صور في هذا المجلد</div>';
-    return;
-  }
-  filtered.forEach(item => {
-    const d = document.createElement('div');
-    d.className = 'gal-item';
-    d.innerHTML = 
-      '<img src="' + item.src + '" onclick="toggleSelectGal(\'' + item.id + '\', this)">' +
-      '<div class="gal-label">' + item.name.slice(0, 15) + '</div>' +
-      '<input type="checkbox" class="chk" value="' + item.id + '" onclick="event.stopPropagation()">';
-    grid.appendChild(d);
-  });
-}
-
-// ─── GALLERY (ADMIN) ───
-window.createFolder = () => {
-  if (S.role !== 'admin') return;
-  const name = prompt('اسم المجلد الجديد:');
-  if (name && !S.folders.includes(name)) {
-    S.folders.push(name);
-    cloudSave('folders', S.folders).then(() => {
-      alert('تم إنشاء المجلد بنجاح');
-    });
-  }
-};
-
-window.deleteFolder = () => {
-  if (S.role !== 'admin') return;
-  if (S.currentFolder === 'عام') { alert('لا يمكن حذف المجلد العام!'); return; }
-  if (confirm('هل أنت متأكد من حذف المجلد "' + S.currentFolder + '" بجميع صوره؟')) {
-    const newGal = S.gallery.filter(x => x.folder !== S.currentFolder);
-    const newFolders = S.folders.filter(f => f !== S.currentFolder);
-    
-    const updates = {};
-    updates['gallery'] = newGal;
-    updates['folders'] = newFolders;
-    
-    db.ref().update(updates).then(() => {
-      S.currentFolder = 'عام';
-      alert('تم حذف المجلد بنجاح');
-    });
-  }
-}
-
-function renderFoldersAdmin() {
-  const f = localStorage.getItem('folders');
-  if (f) S.folders = JSON.parse(f);
-  const ft = $('adminFolderTabs'); if (!ft) return;
-  ft.innerHTML = S.folders.map(fol =>
-    '<div class="folder-tab ' + (S.currentFolder === fol ? 'active' : '') + '" onclick="selectFolderAdmin(\'' + fol + '\')">' + fol + '</div>'
-  ).join('');
-}
-
-window.selectFolderAdmin = (fol) => {
-  S.currentFolder = fol;
-  renderFoldersAdmin();
-  renderGalleryGridAdmin();
-};
-
-window.adminUploadGallery = () => {
-  if (typeof uploadcare === 'undefined') return;
-  uploadcare.openDialog(null, {
-    publicKey: 'f1118bb7ce070c9d80d1',
-    multiple: true,
-    tabs: 'file url camera',
-    locale: 'ar'
-  }).done(result => {
-    // result is a fileGroup
-    Promise.all(result.files().map(f => f.promise())).then(infos => {
-      const updates = {};
-      infos.forEach(info => {
-        const id = db.ref('gallery').push().key;
-        updates[`gallery/${id}`] = { src: info.cdnUrl, name: info.name || 'صورة', folder: S.currentFolder };
-      });
-      db.ref().update(updates).then(() => {
-        alert('تم رفع الصور بنجاح!');
-      });
-    }).catch(e => {
-      alert('حدث خطأ أثناء الرفع، يرجى المحاولة مرة أخرى.');
-    });
-  });
-};
-
-function renderGalleryGridAdmin() {
-  const g = localStorage.getItem('gallery');
-  if (g) S.gallery = JSON.parse(g);
-  const grid = $('adminGalleryGrid'); if (!grid) return;
-  grid.innerHTML = '';
-  const filtered = S.gallery.filter(x => x.folder === S.currentFolder);
-  if (!filtered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;opacity:0.5">لا توجد صور في هذا المجلد</div>';
-    return;
-  }
-  filtered.forEach(item => {
-    const d = document.createElement('div');
-    d.className = 'gal-item';
-    d.innerHTML =
-      '<img src="' + item.src + '" onclick="toggleSelectGal(\'' + item.id + '\', this)">' +
-      '<div class="gal-label">' + item.name.slice(0, 15) + '</div>' +
-      '<input type="checkbox" class="chk" value="' + item.id + '" onclick="event.stopPropagation()">';
-    grid.appendChild(d);
-  });
-}
-
-window.toggleSelectGal = (id, imgEl) => {
-  const chk = imgEl.parentElement.querySelector('.chk');
-  chk.checked = !chk.checked;
-  if (chk.checked) imgEl.parentElement.classList.add('selected');
-  else imgEl.parentElement.classList.remove('selected');
-};
-
-window.deleteSelectedImages = () => {
-  const chks = document.querySelectorAll('#adminGalleryGrid .chk:checked');
-  if (!chks.length) return;
-  if (!confirm('حذف الصور المحددة؟')) return;
-  const ids = Array.from(chks).map(c => c.value);
-  const updates = {};
-  ids.forEach(id => {
-    updates[`gallery/${id}`] = null;
-  });
-  db.ref().update(updates).then(() => {
-    alert('تم حذف الصور المحددة');
-  });
-};
-
-window.saveDuration = (val) => {
-  const d = parseInt(val) || 5;
-  cloudSave('settings/galDuration', d).then(() => {
-    alert('تم تحديث مدة العرض');
-  });
-}
-
-// ─── SLIDESHOW ───
-window.startSlideshow = (isAdminPreview = false) => {
-  const filtered = S.gallery.filter(x => x.folder === S.currentFolder);
-  let targets = [];
-
-  if (isAdminPreview) {
-    const chks = document.querySelectorAll('#adminGalleryGrid .chk:checked');
-    if (chks.length) {
-      const ids = Array.from(chks).map(c => c.value);
-      targets = S.gallery.filter(x => ids.includes(x.id.toString()));
-    } else {
-      targets = filtered;
-    }
-  } else {
-    const chks = document.querySelectorAll('#galleryGrid .chk:checked');
-    if (chks.length) {
-      const ids = Array.from(chks).map(c => c.value);
-      targets = S.gallery.filter(x => ids.includes(x.id.toString()));
-    } else {
-      targets = filtered;
-    }
-  }
-
-  if (!targets.length) { alert('لا توجد صور للعرض'); return; }
-
-  S.slideDuration = parseInt(localStorage.getItem('galDuration')) || 5;
-  S.galIdx = 0;
-  S.activeGallery = targets;
-
-  showSlideFrame();
-  openOv('slideshowOverlay');
+let newsSliderTimer = null;
+let currentNewsIdx = 0;
+window.startNewsSlider = () => {
+  clearInterval(newsSliderTimer);
+  const img = $('newsImg');
+  const title = $('newsTitle');
+  if (!img || !title) return;
   
-  // Auto fullscreen
-  if(!document.fullscreenElement) {
-    $('slideshowOverlay').requestFullscreen().catch(e => {});
+  if (!S.news || !S.news.length) {
+    img.style.display = 'none';
+    title.style.display = 'none';
+    return;
   }
-
-  clearInterval(S.galTimer);
-  S.galTimer = setInterval(() => {
-    ssNext();
-  }, S.slideDuration * 1000);
-};
-
-function showSlideFrame() {
-  const item = S.activeGallery[S.galIdx];
-  const img = $('slideshowImg'); if (img) img.src = item.src;
-  const ctr = $('ssCounter'); if (ctr) ctr.innerText = (S.galIdx + 1) + ' / ' + S.activeGallery.length;
-
-  const bar = $('ssBar');
-  if (bar) {
-    bar.style.animation = 'none';
-    bar.offsetHeight;
-    bar.style.animation = 'progressAnim ' + S.slideDuration + 's linear';
-  }
+  
+  const showSlide = () => {
+    if(!S.news.length) return;
+    currentNewsIdx = (currentNewsIdx + 1) % S.news.length;
+    const n = S.news[currentNewsIdx];
+    img.src = n.url;
+    img.style.display = 'block';
+    if(n.title) {
+      title.innerText = n.title;
+      title.style.display = 'block';
+    } else {
+      title.style.display = 'none';
+    }
+  };
+  showSlide();
+  newsSliderTimer = setInterval(showSlide, 8000);
 }
 
-window.ssNext = () => {
-  if (S.galIdx < S.activeGallery.length - 1) {
-    S.galIdx++;
-    showSlideFrame();
-  } else {
-    // Loop
-    S.galIdx = 0;
-    showSlideFrame();
-  }
+window.adminUploadNews = () => {
+  if (typeof uploadcare === 'undefined') return;
+  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
+    file.promise().done(info => {
+      const t = prompt("اكتب عنواناً لهذه الصورة الإخبارية (اختياري):", "خبر جديد");
+      cloudPush('news', { url: info.cdnUrl, title: t || '' }).then(() => alert('تم الإضافة بنجاح!'));
+    });
+  });
 };
-window.ssPrev = () => {
-  if (S.galIdx > 0) {
-    S.galIdx--;
-    showSlideFrame();
+
+window.renderAdminNews = () => {
+  const list = $('adminNewsList'); if (!list) return;
+  if (!S.news.length) { list.innerHTML = '<div style="opacity:0.6; padding:10px;">لا توجد صور إخبارية.</div>'; return; }
+  list.innerHTML = S.news.map(n => `
+    <div class="wisdom-item">
+      <img src="${n.url}" style="width:50px; height:50px; border-radius:10px; object-fit:cover; margin-left:10px;">
+      <span>${n.title || 'بدون عنوان'}</span>
+      <button class="btn btn-red" style="padding:5px 10px;border-radius:10px; margin-right:auto;" onclick="deleteNews('${n.id}')"><i class="fas fa-trash"></i></button>
+    </div>
+  `).join('');
+};
+
+window.deleteNews = (id) => {
+  if(confirm('حذف هذا الخبر؟')) cloudRemove('news/' + id);
+};
+
+// ─── SCHEDULE ADMIN ───
+window.renderScheduleAdmin = () => {
+  const grid = $('scheduleGrid'); if (!grid) return;
+  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  
+  if (!S.schedule || Object.keys(S.schedule).length === 0) {
+    S.schedule = {};
+    for(let i=0; i<5; i++) {
+      S.schedule[i] = { class: '1-1', pw: Math.floor(1000 + Math.random()*9000).toString() + 'aa' };
+    }
   }
+
+  let html = '';
+  for(let i=0; i<5; i++) {
+    const s = S.schedule[i] || { class: '1-1', pw: '1234' };
+    let opts = '';
+    for (let r = 1; r <= 3; r++) for (let l = 1; l <= 6; l++) {
+       const v = r+'-'+l;
+       opts += \`<option value="\${v}" \${s.class===v?'selected':''}>فصل \${v}</option>\`;
+    }
+    html += \`
+      <div class="scard" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div style="font-size:1.2rem; font-weight:800; width:100px; color:var(--gold);"><i class="fas fa-calendar-day"></i> \${days[i]}</div>
+        <div class="fg" style="flex:1; min-width:150px;">
+          <label>الفصل المخصص</label>
+          <select id="schClass_\${i}" class="input-field">\${opts}</select>
+        </div>
+        <div class="fg" style="flex:1; min-width:150px;">
+          <label>كلمة المرور للفصل</label>
+          <input type="text" id="schPw_\${i}" class="input-field" value="\${s.pw}">
+        </div>
+      </div>
+    \`;
+  }
+  grid.innerHTML = html;
+};
+
+window.saveSchedule = () => {
+  const newSch = {};
+  for(let i=0; i<5; i++) {
+    newSch[i] = {
+      class: $(\`schClass_\${i}\`).value,
+      pw: $(\`schPw_\${i}\`).value
+    };
+  }
+  cloudSave('schedule', newSch).then(() => alert('تم حفظ الجدول وكلمات المرور بنجاح!'));
 };
 window.stopSlideshow = () => {
   clearInterval(S.galTimer);
@@ -974,13 +900,12 @@ window.deleteR = (id) => {
 };
 
 window.saveSt = key => {
-  const ids = { topic: 'stTopic', ambPw: 'stAmbPw', adminPw: 'stAdminPw', wisdomDuration: 'stWisdomDuration' };
+  const ids = { topic: 'stTopic', ticker: 'stTicker', adminPw: 'stAdminPw' };
   const el = $(ids[key]); if (!el) return;
   const val = el.value.trim(); if (!val) return;
 
   const updates = {};
-  if (key === 'ambPw' || key === 'adminPw') updates[`pw/${key === 'ambPw' ? 'amb' : 'admin'}`] = val;
-  else if (key === 'wisdomDuration') updates[key] = parseInt(val) || 10;
+  if (key === 'adminPw') updates['pw/admin'] = val;
   else updates[key] = val;
 
   db.ref('settings').update(updates).then(() => {
@@ -988,95 +913,22 @@ window.saveSt = key => {
   });
 };
 
-function loadSettings() {
-  const g = (k, d) => localStorage.getItem(k) || d;
-
-  const topic = g('topic', 'أهلاً بكم في ثانوية ابن سعدي');
-  const tt = $('topicText'); if (tt) tt.innerText = 'موضوع اليوم: ' + topic;
-  const it2 = $('infoTopic2'); if (it2) it2.innerText = 'موضوع اليوم: ' + topic;
-
-  const w = g('wisdoms');
-  S.wisdoms = w ? JSON.parse(w) : ['العلم يبني بيوتاً لا عماد لها والجهل يهدم بيت العز والكرم'];
-
-  const qv = g('quranVideos');
-  S.quranVideos = qv ? JSON.parse(qv) : [];
-
-  S.pw.amb = g('ambPw', 'sfir100');
-  S.pw.admin = g('adminPw', 'Admin000');
-
-  const att = g('attendance');
-  if (att) S.attendance = JSON.parse(att);
-
-  const fields = { stTopic: topic, stAmbPw: S.pw.amb, stAdminPw: S.pw.admin, stWisdomDuration: S.wisdomDuration };
-  Object.entries(fields).forEach(([id, v]) => { const el = $(id); if (el) el.value = v; });
-
-  const sd = g('galDuration');
-  if (sd) {
-    const sdel = $('slideDuration');
-    if (sdel) sdel.value = sd;
-    S.slideDuration = parseInt(sd);
-  }
-  
-  const wd = g('wisdomDuration');
-  if (wd) S.wisdomDuration = parseInt(wd);
-}
-
-// ─── WISDOMS ───
-window.addWisdom = () => {
-  const el = $('newWisdom');
-  if (el && el.value.trim()) {
-    S.wisdoms.push(el.value.trim());
-    cloudSave('settings/wisdoms', S.wisdoms).then(() => {
-      el.value = '';
-    });
-  }
-};
-
-window.removeWisdom = (idx) => {
-  S.wisdoms.splice(idx, 1);
-  if (S.wisdoms.length === 0) S.wisdoms = ['أضف حكمة جديدة'];
-  cloudSave('settings/wisdoms', S.wisdoms);
-};
-
-function renderWisdoms() {
-  const wl = $('wisdomList'); if (!wl) return;
-  wl.innerHTML = S.wisdoms.map((w, i) =>
-    '<div class="wisdom-item">' +
-    '<span>' + w + '</span>' +
-    '<button class="btn btn-red" style="padding:5px 10px;border-radius:10px" onclick="removeWisdom(' + i + ')"><i class="fas fa-times"></i></button>' +
-    '</div>'
-  ).join('');
-}
-
-// ─── INFO SCREEN LOOP ───
 function initInfoScreenLoop() {
-  const wDisp = $('wisdomDisplay');
-  const tDisp = $('tickerContent');
-
-  if (wDisp) {
-    wDisp.innerText = S.wisdoms[S.currentWisdomIdx] || '';
-    const rotateWisdom = () => {
-      wDisp.style.opacity = 0;
-      setTimeout(() => {
-        S.currentWisdomIdx = (S.currentWisdomIdx + 1) % S.wisdoms.length;
-        wDisp.innerText = S.wisdoms[S.currentWisdomIdx];
-        wDisp.style.opacity = 1;
-      }, 500);
-      setTimeout(rotateWisdom, S.wisdomDuration * 1000);
-    };
-    setTimeout(rotateWisdom, S.wisdomDuration * 1000);
-  }
-
-  // Ticker updater
+  if(window.updateTickerUI) updateTickerUI();
+  if(window.startNewsSlider) startNewsSlider();
+  
+  // Participants update
   setInterval(() => {
+    const pb = $('participantsBoard'); if(!pb) return;
     const approved = S.radios.find(r => r.status === 'approved');
-    if (approved && approved.slides && tDisp) {
-      const names = approved.slides.map(s => s.student).filter(x => x).join(' ✦ ');
-      tDisp.innerText = names ? 'المشاركين في إذاعة اليوم: ' + names : 'لا يوجد مشاركين';
-    } else if (tDisp) {
-      tDisp.innerText = 'ثانوية ابن سعدي ترحب بكم';
+    if (approved && approved.slides) {
+      pb.innerHTML = approved.slides.map(s => 
+        `<div class="participant-card"><i class="fas fa-user-graduate"></i> ${s.student || 'مشارك'}</div>`
+      ).join('');
+    } else {
+      pb.innerHTML = `<div style="opacity:0.6;">بانتظار إذاعة اليوم...</div>`;
     }
-  }, 10000);
+  }, 5000);
 }
 
 // ─── ATTENDANCE ───

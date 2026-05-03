@@ -73,13 +73,7 @@
 
   <!-- BOTTOM ACTIONS -->
   <section class="bottom-bar">
-    <div class="action-card" id="galleryTrigger">
-      <i class="fas fa-photo-film"></i>
-      <div>
-        <h3>معرض الأنشطة</h3>
-        <p>عرض الصور والفعاليات</p>
-      </div>
-    </div>
+    <!-- Removed Gallery Trigger -->
     <div class="action-card" id="infoTrigger">
       <i class="fas fa-display"></i>
       <div>
@@ -111,47 +105,25 @@
       <div id="infoClock" class="info-clock">00:00</div>
       <div id="infoDate2" class="info-date-big"></div>
       <div id="infoTopic2" class="info-topic-big">موضوع اليوم: ...</div>
-      <div class="wisdom-box">
-        <div id="wisdomDisplay" class="wisdom-word">جاري التحميل...</div>
+      <!-- News Slider -->
+      <div id="newsSlider" class="news-slider">
+        <img id="newsImg" src="" class="news-img" style="display:none;">
+        <div id="newsTitle" class="news-title-overlay" style="display:none;"></div>
       </div>
-      <div class="attendance-ticker" id="attendanceTicker">
-        <span id="tickerContent">جاري تحميل المشاركين...</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- 2. GALLERY MANAGER (User View) -->
-  <div class="overlay" id="galleryOverlay">
-    <div class="modal xlarge">
-      <button class="x-btn" onclick="closeOv('galleryOverlay')">✕</button>
-      <h2 class="modal-title"><i class="fas fa-images"></i> معرض الأنشطة</h2>
-      <div class="gallery-toolbar">
-        <div class="gallery-tb-left"></div>
-        <div class="gallery-tb-right">
-          <button class="btn btn-gold" onclick="startSlideshow(false)"><i class="fas fa-play"></i> عرض الشرائح</button>
+      <!-- Participants Display -->
+      <div class="participants-board" id="participantsBoard"></div>
+      <!-- News Ticker -->
+      <div class="news-ticker">
+        <div class="ticker-wrap">
+          <div id="tickerContent" class="ticker-move">ثانوية ابن سعدي ترحب بكم...</div>
         </div>
       </div>
-      <div class="folder-tabs" id="folderTabs"></div>
-      <div id="galleryGrid" class="gallery-grid"></div>
     </div>
   </div>
 
-  <!-- 3. SLIDESHOW FULLSCREEN -->
-  <div class="overlay" id="slideshowOverlay">
-    <button class="x-btn" onclick="stopSlideshow()">✕</button>
-    <div class="slideshow-wrap">
-      <img id="slideshowImg" class="slideshow-img">
-      <div id="slideshowCaption" class="ss-caption" style="display:none"></div>
-      <div id="ssProgress" class="ss-progress">
-        <div id="ssBar" class="ss-bar"></div>
-      </div>
-      <div class="ss-nav">
-        <button onclick="ssPrev()"><i class="fas fa-chevron-right"></i></button>
-        <span id="ssCounter"></span>
-        <button onclick="ssNext()"><i class="fas fa-chevron-left"></i></button>
-      </div>
-    </div>
-  </div>
+  <!-- Removed Gallery Overlay -->
+
+  <!-- Removed Slideshow Overlay -->
 
   <!-- 4. QURAN SELECTION -->
   <div class="overlay" id="quranOverlay">
@@ -177,6 +149,10 @@
       <button class="x-btn" onclick="closeOv('loginOverlay')">✕</button>
       <div id="loginIcon" class="login-icon"></div>
       <h2 id="loginTitle" class="modal-title">دخول</h2>
+      <div id="loginClassSelectWrap" class="fg" style="display:none; text-align:right;">
+        <label>الفصل</label>
+        <select id="loginClassSelect" class="input-field"></select>
+      </div>
       <input type="password" id="loginPass" class="input-field" placeholder="الرمز السري">
       <div id="loginError" class="err-msg" style="display:none">رمز خاطئ!</div>
       <button class="btn full-btn mt20" onclick="validateLogin()">دخول <i class="fas fa-arrow-left"></i></button>
@@ -215,6 +191,7 @@
         <button class="tab-btn" onclick="showTab('tabSettings',this)"><i class="fas fa-cog"></i> الإعدادات</button>
         <button class="tab-btn" onclick="showTab('tabContent',this)"><i class="fas fa-photo-film"></i> المحتوى</button>
         <button class="tab-btn" onclick="showTab('tabAttend',this)"><i class="fas fa-users"></i> الحضور</button>
+        <button class="tab-btn" onclick="showTab('tabSchedule',this)"><i class="fas fa-calendar-alt"></i> الجدول الذكي</button>
       </div>
 
       <!-- TAB: RADIOS -->
@@ -230,24 +207,7 @@
             <input type="text" id="stTopic" class="input-field" placeholder="موضوع اليوم...">
             <button class="btn mt10" onclick="saveSt('topic')">حفظ</button>
           </div>
-          <div class="scard">
-            <label><i class="fas fa-lightbulb"></i> كلمة اليوم</label>
-            <div id="wisdomList" class="wisdom-list"></div>
-            <div style="display:flex;gap:8px;margin-top:10px">
-              <input type="text" id="newWisdom" class="input-field" placeholder="أضف كلمة جديدة...">
-              <button class="btn" onclick="addWisdom()">+</button>
-            </div>
-            <div style="margin-top:10px">
-              <label style="font-size:0.8rem">مدة العرض (بالثواني):</label>
-              <input type="number" id="stWisdomDuration" class="input-sm" value="180" min="10">
-              <button class="btn" onclick="saveSt('wisdomDuration')">حفظ المدة</button>
-            </div>
-          </div>
-          <div class="scard">
-            <label><i class="fas fa-key"></i> كلمة مرور السفراء</label>
-            <input type="text" id="stAmbPw" class="input-field" placeholder="sfir100">
-            <button class="btn mt10" onclick="saveSt('ambPw')">حفظ</button>
-          </div>
+          <!-- Removed Wisdom & Ambassador Password -->
           <div class="scard">
             <label><i class="fas fa-key"></i> كلمة مرور الإدارة</label>
             <input type="text" id="stAdminPw" class="input-field" placeholder="Admin000">
@@ -287,36 +247,17 @@
             </div>
           </div>
 
-          <!-- Gallery Admin -->
+          <!-- Info Screen Admin -->
           <div class="scard full-col">
-            <label><i class="fas fa-images"></i> إدارة معرض الصور</label>
-            <div class="gallery-toolbar" style="margin-top:15px">
-              <div class="gallery-tb-left">
-                <button class="btn" onclick="createFolder()"><i class="fas fa-folder-plus"></i> مجلد جديد</button>
-                <button class="btn btn-red" onclick="deleteSelectedImages()"><i class="fas fa-trash"></i> حذف الصور
-                  المحددة</button>
-                <button class="btn" style="background:#555" onclick="deleteFolder()"><i class="fas fa-folder-minus"></i>
-                  حذف المجلد الحالي</button>
-              </div>
-              <div class="gallery-tb-right">
-                <label>مدة الصورة (ثوانٍ):</label>
-                <input type="number" id="slideDuration" value="5" min="1" max="60" class="input-sm"
-                  onchange="saveDuration(this.value)">
-                <button class="btn btn-gold" onclick="startSlideshow(true)"><i class="fas fa-play"></i> تجربة
-                  العرض</button>
-                <button class="btn btn-accent" onclick="toggleFullscreenGallery()"><i class="fas fa-expand"></i> ملء الشاشة</button>
-              </div>
+            <label><i class="fas fa-display"></i> إدارة شاشة الأخبار والمعلومات</label>
+            <div style="display:flex;gap:10px;margin-bottom:10px; margin-top:15px;">
+              <button class="btn btn-accent" onclick="adminUploadNews()"><i class="fas fa-upload"></i> إضافة صورة إخبارية جديدة</button>
             </div>
-
-            <div style="margin:15px 0">
-              <button class="btn btn-accent" style="width:100%;justify-content:center" onclick="adminUploadGallery()">
-                <i class="fas fa-upload"></i> إضافة صور جديدة عبر Uploadcare
-              </button>
-            </div>
-
-            <div class="folder-tabs" id="adminFolderTabs"></div>
-            <div id="adminGalleryGrid" class="gallery-grid"
-              style="border:1px solid var(--gb);padding:15px;border-radius:15px;background:var(--bg2);min-height:200px">
+            <div id="adminNewsList" class="wisdom-list" style="max-height:250px"></div>
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.1);">
+              <label><i class="fas fa-bullhorn"></i> الشريط الإخباري المتحرك</label>
+              <input type="text" id="stTicker" class="input-field" placeholder="مثال: نرحب بضيوفنا الكرام في ثانوية ابن سعدي...">
+              <button class="btn mt10 btn-gold" onclick="saveSt('ticker')">حفظ الشريط الإخباري</button>
             </div>
           </div>
         </div>
@@ -345,6 +286,18 @@
         </thead>
         <tbody id="attendBody"></tbody>
       </table>
+      </div>
+
+      <!-- TAB: SCHEDULE -->
+      <div id="tabSchedule" class="tab-body">
+        <div class="scard full-col">
+          <label><i class="fas fa-calendar-alt"></i> جدول الإذاعة الأسبوعي وكلمات المرور</label>
+          <p style="opacity:0.8; font-size:0.9rem; margin-bottom:15px;">قم بتعيين فصل لكل يوم. لا يمكن للسفير الدخول إلا في يومه المخصص وباستخدام كلمة المرور الخاصة بفصله (تم توليد كلمات مرور فريدة تلقائياً).</p>
+          <div id="scheduleGrid" style="display:flex; flex-direction:column; gap:10px;">
+            <!-- Populated by JS -->
+          </div>
+          <button class="btn btn-gold full-btn mt20" onclick="saveSchedule()"><i class="fas fa-save"></i> حفظ الجدول وكلمات المرور</button>
+        </div>
       </div>
     </div>
   </div>

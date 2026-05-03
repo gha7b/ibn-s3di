@@ -1,9 +1,8 @@
 /* ============================
-   app.js - Ibn Saadi Radio V3.1 - CLOUD EDITION
+   app.js - Ibn Saadi Radio V3.2 - SMART EDITION
    Complete Logic Layer with Firebase Sync
    ============================ */
 
-// ══════════════════ FIREBASE CONFIG ══════════════════
 const firebaseConfig = {
     apiKey: "AIzaSyBuxW9FmB22apOywTohu63Fi5ifsOP6h84",
     authDomain: "abns3di.firebaseapp.com",
@@ -14,7 +13,6 @@ const firebaseConfig = {
     databaseURL: "https://abns3di-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
-// Initialize Firebase Safely
 try {
   if (typeof firebase !== 'undefined') {
     firebase.initializeApp(firebaseConfig);
@@ -29,7 +27,6 @@ try {
 const $ = id => document.getElementById(id.replace('#', ''));
 const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
 
-// ─── STATE ───
 const S = {
   role: '', slides: [], idx: 0,
   bellVol: 0.5,
@@ -47,13 +44,11 @@ const S = {
   ambClass: ''
 };
 
-// ─── CLOUD SYNC HELPERS ───
 const cloudSave = (path, data) => db.ref(path).set(data);
 const cloudPush = (path, data) => db.ref(path).push(data);
 const cloudUpdate = (path, data) => db.ref(path).update(data);
 const cloudRemove = (path) => db.ref(path).remove();
 
-// ─── REALTIME LISTENERS ───
 function initCloudSync() {
   if (typeof db === 'undefined' || !db) return;
   try {
@@ -77,7 +72,6 @@ function initCloudSync() {
       S.radios = val ? Object.keys(val).map(k => ({ ...val[k], id: k })) : [];
       renderAdminRadios();
       checkAutoArchive(); 
-      loadAndRun(); 
     });
 
     db.ref('schedule').on('value', snap => {
@@ -86,7 +80,8 @@ function initCloudSync() {
     });
 
     db.ref('news').on('value', snap => {
-      S.news = snap.val() ? Object.keys(snap.val()).map(k => ({...snap.val()[k], id: k})) : [];
+      const val = snap.val();
+      S.news = val ? Object.keys(val).map(k => ({...val[k], id: k})) : [];
       if(window.renderAdminNews) renderAdminNews();
       if(window.startNewsSlider) startNewsSlider();
     });
@@ -111,7 +106,6 @@ function updateTopicUI() {
   const t2 = $('stTopic'); if (t2) t2.value = S.topic;
 }
 
-// ─── START ───
 document.addEventListener('DOMContentLoaded', () => {
   initParticles();
   initFloatingIcons();
@@ -143,38 +137,23 @@ function initParticles() {
   }
 }
 
-// ─── CLOCK (12 Hour Format) ───
 function initClock() {
   const tick = () => {
     const n = new Date();
     let h = n.getHours();
     const m = n.getMinutes().toString().padStart(2, '0');
     const ampm = h >= 12 ? 'م' : 'ص';
-    h = h % 12;
-    h = h ? h : 12; // 0 should be 12
-
+    h = h % 12; h = h ? h : 12;
     const t = h + ':' + m + ' ' + ampm;
     const d = n.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
     const mc = $('mainClock'); if (mc) mc.innerText = t;
     const md = $('mainDate'); if (md) md.innerText = d;
     const ic = $('infoClock'); if (ic) ic.innerText = t;
     const id2 = $('infoDate2'); if (id2) id2.innerText = d;
   };
-  tick();
-  setInterval(tick, 1000);
+  tick(); setInterval(tick, 1000);
 }
 
-function loadLocalRadios() {
-  try {
-    const local = JSON.parse(localStorage.getItem('radios') || '[]');
-    S.radios = [...local].reverse();
-  } catch (e) {
-    S.radios = [];
-  }
-}
-
-// ─── SOUND ───
 function beep(f = 520, d = 0.25, v = null) {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -187,83 +166,47 @@ function beep(f = 520, d = 0.25, v = null) {
 function bellSound() { beep(520, 0.4); setTimeout(() => beep(650, 0.4), 250); }
 function clickSound() { beep(700, 0.08, 0.3); }
 
-// ─── OVERLAY ───
 window.openOv = (id) => { const el = $(id); if (el) { el.classList.add('open'); clickSound(); } };
 window.closeOv = (id) => { const el = $(id); if (el) { el.classList.remove('open'); clickSound(); } };
 window.closeVideo = () => { const v = $('mainVideo'); if (v) { v.pause(); v.src = ''; } closeOv('videoOverlay'); if(document.fullscreenElement) document.exitFullscreen(); };
 
 window.toggleVideoFullscreen = () => {
-  const v = $('mainVideo');
-  if(!v) return;
+  const v = $('mainVideo'); if(!v) return;
   if(!document.fullscreenElement) v.parentElement.requestFullscreen().catch(e => {});
   else document.exitFullscreen();
 };
 
-window.toggleFullscreenGallery = () => {
-  const el = $('slideshowOverlay');
-  if(!document.fullscreenElement) el.requestFullscreen().catch(e => {});
-  else document.exitFullscreen();
-};
-
-// ─── BIND EVENTS ───
 function bindAll() {
   on('radioCard', startRadio);
   on('quranCard', openQuranSelector);
   on('anthemCard', playAnthem);
   on('infoTrigger', () => openOv('infoOverlay'));
-
   on('adminBtn', () => { S.role = 'admin'; openLogin(); });
   on('ambassadorBtn', () => { S.role = 'amb'; openLogin(); });
   on('themeBtn', toggleTheme);
-
   const lp = $('loginPass');
   if (lp) lp.addEventListener('keydown', e => { if (e.key === 'Enter') validateLogin(); });
-
   document.addEventListener('click', e => {
     const p = document.createElement('div');
-    p.className = 'click-particle';
-    p.style.left = e.pageX + 'px';
-    p.style.top = e.pageY + 'px';
-    document.body.appendChild(p);
-    setTimeout(() => p.remove(), 600);
+    p.className = 'click-particle'; p.style.left = e.pageX + 'px'; p.style.top = e.pageY + 'px';
+    document.body.appendChild(p); setTimeout(() => p.remove(), 600);
   });
 }
 
-// ─── THEME ───
 let dark = true;
 function toggleTheme() {
-  dark = !dark;
-  document.body.classList.toggle('light', !dark);
-  const ti = $('themeIcon');
-  if (ti) ti.className = dark ? 'fas fa-moon' : 'fas fa-sun';
+  dark = !dark; document.body.classList.toggle('light', !dark);
+  const ti = $('themeIcon'); if (ti) ti.className = dark ? 'fas fa-moon' : 'fas fa-sun';
   clickSound();
 }
 
-// ─── LOGIN ───
 function openLogin() {
   const isA = S.role === 'admin';
   const icon = $('loginIcon'); if (icon) icon.innerHTML = isA ? '<i class="fas fa-gear"></i>' : '<i class="fas fa-user-tie"></i>';
   const title = $('loginTitle'); if (title) title.innerText = isA ? 'دخول الإدارة' : 'دخول السفير';
   const pw = $('loginPass'); if (pw) pw.value = '';
   const err = $('loginError'); if (err) err.style.display = 'none';
-  
-  const csWrap = $('loginClassSelectWrap');
-  if (csWrap) {
-    if (isA) { csWrap.style.display = 'none'; }
-    else { 
-      csWrap.style.display = 'flex'; 
-      buildLoginClasses(); 
-    }
-  }
   openOv('loginOverlay');
-}
-
-function buildLoginClasses() {
-  const sel = $('loginClassSelect'); if (!sel || sel.options.length) return;
-  for (let r = 1; r <= 3; r++) for (let l = 1; l <= 6; l++) {
-    const o = document.createElement('option');
-    o.value = r + '-' + l; o.text = 'فصل ' + r + '-' + l; sel.appendChild(o);
-  }
 }
 
 window.validateLogin = () => {
@@ -271,44 +214,24 @@ window.validateLogin = () => {
   const val = pwEl.value.trim();
   const err = $('loginError'); if (err) err.style.display = 'none';
 
-  if (val === '12345678') { 
-    S.ambClass = '1-1';
-    successLogin(); return;
-  }
+  if (val === '12345678') { S.ambClass = '1-1'; successLogin(); return; }
 
   if (S.role === 'admin') {
     if (S.pw && val === S.pw.admin) successLogin();
     else { err.innerText = "الرمز السري للإدارة خاطئ!"; err.style.display = 'block'; beep(200, 0.3, 0.5); }
   } else {
-    // Ambassador check
-    let found = null;
-    let dayIdx = -1;
+    let found = null; let dayIdx = -1;
     for(let i=0; i<5; i++) {
-      if(S.schedule[i] && S.schedule[i].pw === val) {
-        found = S.schedule[i];
-        dayIdx = i;
-        break;
-      }
+      if(S.schedule[i] && S.schedule[i].pw === val) { found = S.schedule[i]; dayIdx = i; break; }
     }
-
-    if (!found) {
-      err.innerText = "الرمز السري غير صحيح لأي فصل!"; err.style.display = 'block'; beep(200, 0.3, 0.5);
-      return;
-    }
-
-    const today = new Date().getDay(); // 0=Sun, 1=Mon...
-    if (today > 4) {
-      err.innerText = "لا يوجد إذاعة في عطلة نهاية الأسبوع!"; err.style.display = 'block'; return;
-    }
-
+    if (!found) { err.innerText = "الرمز السري غير صحيح لأي فصل!"; err.style.display = 'block'; beep(200, 0.3, 0.5); return; }
+    const today = new Date().getDay(); if (today > 4) { err.innerText = "لا يوجد إذاعة في عطلة نهاية الأسبوع!"; err.style.display = 'block'; return; }
     if (today !== dayIdx) {
       const daysAr = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
       err.innerText = `يوم إذاعة فصلك هو ${daysAr[dayIdx]} وليس اليوم!`;
       err.style.display = 'block'; return;
     }
-
-    S.ambClass = found.class;
-    successLogin();
+    S.ambClass = found.class; successLogin();
   }
 };
 
@@ -322,683 +245,54 @@ function successLogin() {
       if(window.renderTickerAdmin) renderTickerAdmin();
       renderAdminQuran();
     } else {
-      const cdisp = $('classSelectDisplay');
-      if(cdisp) cdisp.innerText = S.ambClass;
-      setNextDate();
-      checkAmbassadorDraft();
-      openOv('ambOverlay');
+      const cdisp = $('classSelectDisplay'); if(cdisp) cdisp.innerText = S.ambClass;
+      setNextDate(); checkAmbassadorDraft(); openOv('ambOverlay');
     }
 }
 
-// ─── MEDIA ───
 function playVideo(url) {
   if (!url) { alert("لم يتم رفع فيديو من قبل الإدارة"); return; }
   const v = $('mainVideo'); if (!v) return;
-  v.src = url;
-  v.onended = () => closeVideo();
-  openOv('videoOverlay');
-  v.play().catch(() => { });
+  v.src = url; v.onended = () => closeVideo();
+  openOv('videoOverlay'); v.play().catch(() => { });
 }
 
-// ─── QURAN ───
 function openQuranSelector() {
   const list = $('quranListUser'); if (!list) return;
   if (!S.quranVideos.length) {
     list.innerHTML = '<div class="empty-st">لا توجد فيديوهات قرآن، الرجاء من الإدارة إضافتها.</div>';
   } else {
     list.innerHTML = S.quranVideos.map(q =>
-      '<div class="quran-entry" onclick="playQuranVideo(\'' + q.url + '\')">' +
-      '<i class="fas fa-play-circle"></i>' +
-      '<span>' + q.name + '</span>' +
-      '</div>'
-    ).join('');
+      `<div class="quran-entry" onclick="playVideo('${q.url}')">
+        <i class="fas fa-play-circle"></i> <span>${q.label}</span>
+      </div>`).join('');
   }
   openOv('quranOverlay');
 }
 
-window.playQuranVideo = (url) => {
-  closeOv('quranOverlay');
-  playVideo(url);
-}
-
-window.addQuranVideoEntry = () => {
-  if (typeof uploadcare === 'undefined') { alert('Uploadcare not loaded'); return; }
-  uploadcare.openDialog(null, {
-    publicKey: 'f1118bb7ce070c9d80d1',
-    tabs: 'file url',
-    locale: 'ar'
-  }).done(file => {
-    file.promise().done(info => {
-      const name = prompt("ما هو اسم القارئ أو السورة؟", "تلاوة جديدة");
-      if (name) {
-        S.quranVideos.push({ name: name, url: info.cdnUrl, id: Date.now() });
-        localStorage.setItem('quranVideos', JSON.stringify(S.quranVideos));
-        renderAdminQuran();
-      }
-    });
-  });
-};
-
-window.deleteQuranVideo = (id) => {
-  S.quranVideos = S.quranVideos.filter(q => q.id !== id);
-  localStorage.setItem('quranVideos', JSON.stringify(S.quranVideos));
-  renderAdminQuran();
-};
-
-function renderAdminQuran() {
-  const list = $('quranAdminList'); if (!list) return;
-  if (!S.quranVideos.length) {
-    list.innerHTML = '<div style="opacity:0.6;padding:10px">لم يتم إضافة تلاوات بعد.</div>';
-    return;
-  }
-  list.innerHTML = S.quranVideos.map(q => 
-    '<div class="wisdom-item">' +
-      '<span>' + q.name + '</span>' +
-      '<div style="display:flex;gap:5px">' +
-        '<button class="btn btn-gold" style="padding:5px 10px;border-radius:10px" onclick="playQuranVideo(\'' + q.url + '\')"><i class="fas fa-play"></i></button>' +
-        '<button class="btn btn-red" style="padding:5px 10px;border-radius:10px" onclick="deleteQuranVideo(' + q.id + ')"><i class="fas fa-trash"></i></button>' +
-      '</div>' +
-    '</div>'
-  ).join('');
-}
-
-// ─── ANTHEM ───
-window.uploadAnthemVideo = () => {
-  if (typeof uploadcare === 'undefined') return;
-  uploadcare.openDialog(null, {
-    publicKey: 'f1118bb7ce070c9d80d1',
-    tabs: 'file url',
-    locale: 'ar'
-  }).done(file => {
-    file.promise().done(info => {
-      localStorage.setItem('anthemUrl', info.cdnUrl);
-      const lbl = $('currentAnthemLabel');
-      if (lbl) lbl.innerText = "تم حفظ النشيد الجديد بنجاح!";
-    });
-  });
-}
-
-window.deleteAnthemVideo = () => {
-  if (!confirm('هل تريد مسح النشيد الوطني الحالي؟')) return;
-  localStorage.removeItem('anthemUrl');
-  const lbl = $('currentAnthemLabel');
-  if (lbl) lbl.innerText = "تم إزالة النشيد الوطني بنجاح.";
-}
-
-function playAnthem() {
-  const url = localStorage.getItem('anthemUrl');
-  playVideo(url);
-}
-
-// ─── INFO SCREEN AND NEWS ───
-window.updateTickerUI = () => {
-  const tDisp = $('tickerContent');
-  if (tDisp) tDisp.innerText = S.ticker || 'ثانوية ابن سعدي ترحب بكم';
-};
-
-let newsSliderTimer = null;
-let currentNewsIdx = 0;
-window.startNewsSlider = () => {
-  clearInterval(newsSliderTimer);
-  const img = $('newsImg');
-  const title = $('newsTitle');
-  if (!img || !title) return;
-  
-  if (!S.news || !S.news.length) {
-    img.style.display = 'none';
-    title.style.display = 'none';
-    return;
-  }
-  
-  const showSlide = () => {
-    if(!S.news.length) return;
-    currentNewsIdx = (currentNewsIdx + 1) % S.news.length;
-    const n = S.news[currentNewsIdx];
-    img.src = n.url;
-    img.style.display = 'block';
-    if(n.title) {
-      title.innerText = n.title;
-      title.style.display = 'block';
-    } else {
-      title.style.display = 'none';
-    }
-  };
-  showSlide();
-  newsSliderTimer = setInterval(showSlide, 8000);
-}
-
-window.adminUploadNews = () => {
-  if (typeof uploadcare === 'undefined') return;
-  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
-    file.promise().done(info => {
-      const t = prompt("اكتب عنواناً لهذه الصورة الإخبارية (اختياري):", "خبر جديد");
-      cloudPush('news', { url: info.cdnUrl, title: t || '' }).then(() => alert('تم الإضافة بنجاح!'));
-    });
-  });
-};
-
-window.renderAdminNews = () => {
-  const list = $('adminNewsList'); if (!list) return;
-  if (!S.news.length) { list.innerHTML = '<div style="opacity:0.6; padding:10px;">لا توجد صور إخبارية.</div>'; return; }
-  list.innerHTML = S.news.map(n => `
-    <div class="wisdom-item">
-      <img src="${n.url}" style="width:50px; height:50px; border-radius:10px; object-fit:cover; margin-left:10px;">
-      <span>${n.title || 'بدون عنوان'}</span>
-      <button class="btn btn-red" style="padding:5px 10px;border-radius:10px; margin-right:auto;" onclick="deleteNews('${n.id}')"><i class="fas fa-trash"></i></button>
-    </div>
-  `).join('');
-};
-
-window.deleteNews = (id) => {
-  if(confirm('حذف هذا الخبر؟')) cloudRemove('news/' + id);
-};
-
-// ─── SCHEDULE ADMIN ───
-window.renderScheduleAdmin = () => {
-  const grid = $('scheduleGrid'); if (!grid) return;
-  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-  
-  if (!S.schedule || Object.keys(S.schedule).length === 0) {
-    S.schedule = {};
-    for(let i=0; i<5; i++) {
-      S.schedule[i] = { class: '1-1', pw: Math.floor(1000 + Math.random()*9000).toString() + 'aa' };
-    }
-  }
-
-  let html = '';
-  for(let i=0; i<5; i++) {
-    const s = S.schedule[i] || { class: '1-1', pw: '1234' };
-    let opts = '';
-    for (let r = 1; r <= 3; r++) for (let l = 1; l <= 6; l++) {
-       const v = r+'-'+l;
-       opts += `<option value="${v}" ${s.class===v?'selected':''}>فصل ${v}</option>`;
-    }
-    html += `
-      <div class="scard" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-        <div style="font-size:1.2rem; font-weight:800; width:100px; color:var(--gold);"><i class="fas fa-calendar-day"></i> ${days[i]}</div>
-        <div class="fg" style="flex:1; min-width:150px;">
-          <label>الفصل المخصص</label>
-          <select id="schClass_${i}" class="input-field">${opts}</select>
-        </div>
-        <div class="fg" style="flex:1; min-width:150px;">
-          <label>كلمة المرور للفصل</label>
-          <input type="text" id="schPw_${i}" class="input-field" value="${s.pw}">
-        </div>
-      </div>
-    `;
-  }
-  grid.innerHTML = html;
-};
-
-window.saveSchedule = () => {
-  const newSch = {};
-  for(let i=0; i<5; i++) {
-    newSch[i] = {
-      class: $(`schClass_${i}`).value,
-      pw: $(`schPw_${i}`).value
-    };
-  }
-  cloudSave('schedule', newSch).then(() => alert('تم حفظ الجدول وكلمات المرور بنجاح!'));
-};
-window.stopSlideshow = () => {
-  clearInterval(S.galTimer);
-  S.galTimer = null;
-  closeOv('slideshowOverlay');
-};
-
-
-// ─── RADIO PRESENTATION ───
-function startRadio() {
-  S.idx = -1; openOv('presOverlay'); renderStart();
-}
-
-function renderStart() {
-  const c = $('presContent'); if (!c) return;
-  const t = localStorage.getItem('topic') || 'لم يتم تحديد موضوع';
-  c.innerHTML = '<div style="animation:fadeInOv .5s;text-align:center;margin-top:10vh">' +
-    '<i class="fas fa-microphone-lines" style="font-size:8rem;color:var(--gold);display:block;margin-bottom:25px"></i>' +
-    '<div class="ps-student">الإذاعة المدرسية</div>' +
-    '<div class="ps-title" style="margin-top:10px">موضوع اليوم: ' + t + '</div>' +
-    '<button class="btn btn-gold" style="margin-top:35px;padding:16px 55px;font-size:1.2rem" onclick="loadAndRun()">' +
-    '<i class="fas fa-play"></i> بدء البث' +
-    '</button></div>';
-  const ctr = $('slideCounter'); if (ctr) ctr.innerText = 'الاستعداد';
-  const nb = $('nextBtn'); if (nb) nb.disabled = true;
-  const pb = $('prevBtn'); if (pb) pb.disabled = true;
-}
-
-window.loadAndRun = async () => {
-  const c = $('presContent'); if (c) c.innerHTML = '<div class="ps-student" style="color:var(--gold);margin-top:20vh">جاري التحميل...</div>';
-  
-  const now = new Date();
-  const hours = now.getHours();
-  const todayStr = now.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  
-  let approved = S.radios.find(r => r.status === 'approved');
-  
-  if (approved && hours >= 14 && approved.date === todayStr) {
-    S.slides = [{ student: 'النظام الذكي', title: 'انتهت إذاعة اليوم', content: 'تم أرشفة إذاعة اليوم تلقائياً في تمام الساعة 2 ظهراً. بانتظار إذاعة اليوم القادم.' }];
-  } else if (approved) {
-    S.slides = approved.slides || [];
-  } else {
-    S.slides = [{ student: 'ثانوية ابن سعدي', title: 'تنبيه', content: 'لا توجد إذاعة معتمدة لليوم.' }];
-  }
-  S.idx = 0; renderPresSlide();
-};
-
-function checkAutoArchive() {
-  const now = new Date();
-  const todayStr = now.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  
-  if (now.getHours() >= 14) {
-    const approved = S.radios.find(r => r.status === 'approved' && r.date === todayStr);
-    if (approved) {
-      // Just update UI flag, data stays for records
-      console.log('Smart Protocol: Radio Archived');
-    }
-  }
-}
-
-function renderPresSlide() {
-  const c = $('presContent'); if (!c) return;
-  if (S.idx >= S.slides.length) { renderEnd(); return; }
-  const sl = S.slides[S.idx];
-  let media = '';
-  if (sl.fileUrl) {
-    const isV = /\.(mp4|webm|mov|ogg)$/i.test(sl.fileUrl) || sl.fileUrl.includes('video');
-    media = isV
-      ? '<video src="' + sl.fileUrl + '" controls autoplay></video>'
-      : '<img src="' + sl.fileUrl + '" onclick="zoomMedia(this.src)">' +
-      '<button class="zoom-icon" onclick="zoomMedia(\'' + sl.fileUrl + '\')"><i class="fas fa-search-plus"></i> تكبير</button>';
-  }
-
-  c.innerHTML = '<div class="pres-slide" style="width:100%;max-width:900px;text-align:center;animation:fadeOv 0.4s">' +
-    '<div class="ps-title">' + (sl.title || '') + '</div>' +
-    '<div class="ps-student">' + (sl.student || '') + '</div>' +
-    (sl.content ? '<div class="ps-text">' + sl.content + '</div>' : '') +
-    (media ? '<div class="ps-media">' + media + '</div>' : '') +
-    '</div>';
-
-  const ctr = $('slideCounter'); if (ctr) ctr.innerText = (S.idx + 1) + ' / ' + S.slides.length;
-  const pb = $('prevBtn'); if (pb) pb.disabled = (S.idx === 0);
-  const nb = $('nextBtn'); if (nb) nb.disabled = false;
-  bellSound();
-}
-
-window.zoomMedia = (src) => {
-  $('zoomImg').src = src;
-  openOv('zoomOverlay');
-}
-
-window.nextSlide = () => { S.idx++; renderPresSlide(); };
-window.prevSlide = () => { if (S.idx > 0) { S.idx--; renderPresSlide(); } };
-
-function renderEnd() {
-  const c = $('presContent'); if (!c) return;
-  c.innerHTML = '<div style="animation:fadeInOv .5s;text-align:center;margin-top:10vh">' +
-    '<i class="fas fa-check-circle" style="font-size:7rem;color:var(--accent);display:block;margin-bottom:25px"></i>' +
-    '<div class="ps-student">انتهت الإذاعة</div>' +
-    '<div class="ps-title" style="margin-top:10px">شكراً لحسن استماعكم — ثانوية ابن سعدي</div>' +
-    '<div style="display:flex;gap:15px;justify-content:center;margin-top:35px">' +
-    '<button class="btn btn-gold" onclick="startRadio()"><i class="fas fa-redo"></i> إعادة العرض</button>' +
-    '<button class="btn" style="background:#555" onclick="closeOv(\'presOverlay\')"><i class="fas fa-times"></i> خروج</button>' +
-    '</div></div>';
-  const ctr = $('slideCounter'); if (ctr) ctr.innerText = 'النهاية';
-  const pb = $('prevBtn'); if (pb) pb.disabled = true;
-  const nb = $('nextBtn'); if (nb) nb.disabled = true;
-  bellSound();
-}
-
-// ─── AMBASSADOR ───
-let slCnt = 0;
-let editDraftId = null;
-
-window.addSlide = (data = null) => {
-  slCnt++;
-  const ed = $('slidesEditor'); if (!ed) return;
-  const d = document.createElement('div');
-  d.className = 'slide-entry'; d.dataset.id = slCnt;
-
-  const isFileActive = (data && data.fileUrl) ? 'active' : '';
-  const isTextActive = (!data || !data.fileUrl) ? 'active' : '';
-  const studentVal = data ? data.student : '';
-  const titleVal = data ? data.title : '';
-  const fileVal = (data && data.fileUrl) ? data.fileUrl : '';
-  const textVal = data ? data.content : '';
-
-  let areaHtml = '';
-  if (data && data.fileUrl) {
-    areaHtml = '<button class="btn btn-accent s-file-btn" style="width:100%;justify-content:center" onclick="ambUploadFile(this)"><i class="fas fa-upload"></i> تغيير الملف المرفوع</button>' +
-      '<input type="hidden" class="s-file" value="' + fileVal + '">' +
-      '<div class="s-file-name" style="margin-top:5px;font-size:0.85rem;color:var(--gold)">تم إرفاق ملف سابقاً</div>';
-  } else {
-    areaHtml = '<textarea class="input-field s-text" rows="3" placeholder="محتوى الفقرة (إلزامي)" required>' + textVal + '</textarea>';
-  }
-
-  d.innerHTML = '<div class="se-head">' +
-    '<h4><i class="fas fa-list-ol"></i> فقرة <span class="sl-num">' + slCnt + '</span></h4>' +
-    '<div style="display:flex;gap:8px">' +
-    '<button class="btn btn-accent" title="لأعلى" onclick="moveUp(this)"><i class="fas fa-arrow-up"></i></button>' +
-    '<button class="btn btn-accent" title="لأسفل" onclick="moveDn(this)"><i class="fas fa-arrow-down"></i></button>' +
-    '<button class="btn btn-red" onclick="removeSlide(this)"><i class="fas fa-trash"></i></button>' +
-    '</div>' +
-    '</div>' +
-    '<div class="se-fields">' +
-    '<input class="input-field s-student" placeholder="اسم الطالب (إلزامي)" required value="' + studentVal + '">' +
-    '<input class="input-field s-title" placeholder="عنوان الفقرة (إلزامي)" required value="' + titleVal + '">' +
-    '</div>' +
-    '<div class="se-types">' +
-    '<button class="type-btn ' + isTextActive + '" onclick="setType(this,\'text\')">نص مكتوب</button>' +
-    '<button class="type-btn ' + isFileActive + '" onclick="setType(this,\'file\')">فيديو / صورة</button>' +
-    '</div>' +
-    '<div class="s-area">' + areaHtml + '</div>';
-
-  ed.appendChild(d);
-
-  clickSound();
-  updateSlideNumbers();
-};
-
-window.ambUploadFile = (btn) => {
-  if (typeof uploadcare === 'undefined') return;
-  uploadcare.openDialog(null, {
-    publicKey: 'f1118bb7ce070c9d80d1',
-    tabs: 'file url camera',
-    locale: 'ar'
-  }).done(file => {
-    const p = btn.parentElement;
-    p.querySelector('.s-file-name').innerText = "جاري معالجة الملف...";
-    file.promise().done(info => {
-      p.querySelector('.s-file').value = info.cdnUrl;
-      p.querySelector('.s-file-name').innerText = "تم إرفاق: " + info.name;
-    }).fail(() => {
-      p.querySelector('.s-file-name').innerText = "فشل الرفع!";
-    });
-  });
-};
-
-window.checkAmbassadorDraft = () => {
-  loadLocalRadios();
-  const classVal = $('classSelect')?.value;
-  if (!classVal) return;
-
-  const existing = S.radios.find(r => r.class === classVal && r.status === 'pending');
-  const ed = $('slidesEditor');
-  if (existing) {
-    editDraftId = existing.id;
-    $('ambSubmitBtnTxt').innerText = "تحديث الإذاعة المرسلة للإدارة";
-    ed.innerHTML = '';
-    slCnt = 0;
-    existing.slides.forEach(sl => addSlide(sl));
-  } else {
-    editDraftId = null;
-    $('ambSubmitBtnTxt').innerText = "إرسال الإذاعة للإدارة";
-    if (ed && ed.children.length === 0) addSlide();
-  }
-};
-
-window.removeSlide = (btn) => {
-  btn.closest('.slide-entry').remove();
-  updateSlideNumbers();
-};
-
-function updateSlideNumbers() {
-  const entries = document.querySelectorAll('.slide-entry');
-  entries.forEach((e, i) => {
-    const numEl = e.querySelector('.sl-num');
-    if (numEl) numEl.innerText = i + 1;
-  });
-  slCnt = entries.length;
-}
-
-window.setType = (btn, type) => {
-  const entry = btn.closest('.slide-entry');
-  entry.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const area = entry.querySelector('.s-area');
-  if (type === 'file') {
-    area.innerHTML = '<button class="btn btn-accent s-file-btn" style="width:100%;justify-content:center" onclick="ambUploadFile(this)"><i class="fas fa-upload"></i> اختر ملف عبر Uploadcare</button>' +
-      '<input type="hidden" class="s-file" value="">' +
-      '<div class="s-file-name" style="margin-top:5px;font-size:0.85rem;color:var(--gold)">لم يتم إرفاق ملف</div>';
-  } else {
-    area.innerHTML = '<textarea class="input-field s-text" rows="3" placeholder="محتوى الفقرة (إلزامي)" required></textarea>';
-  }
-};
-
-window.moveUp = btn => {
-  const el = btn.closest('.slide-entry');
-  if (el.previousElementSibling) { el.parentElement.insertBefore(el, el.previousElementSibling); updateSlideNumbers(); }
-};
-window.moveDn = btn => {
-  const el = btn.closest('.slide-entry');
-  if (el.nextElementSibling) { el.parentElement.insertBefore(el.nextElementSibling, el); updateSlideNumbers(); }
-};
-
-function buildClasses() {
-  const sel = $('classSelect'); if (!sel || sel.options.length) return;
-  for (let l = 1; l <= 3; l++) for (let r = 1; r <= 6; r++) {
-    const o = document.createElement('option');
-    o.value = r + '-' + l; o.text = 'فصل ' + r + '-' + l; sel.appendChild(o);
-  }
-}
-
-function setNextDate() {
-  const d = new Date(); d.setDate(d.getDate() + 1);
-  const el = $('nextDay');
-  if (el) el.innerText = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-window.submitRadio = async () => {
-  const entries = document.querySelectorAll('.slide-entry');
-  if (!entries.length) { alert('أضف فقرة واحدة على الأقل!'); return; }
-
-  const slides = [];
-  let valid = true;
-
-  entries.forEach((e, i) => {
-    const student = e.querySelector('.s-student')?.value.trim() || '';
-    const title = e.querySelector('.s-title')?.value.trim() || '';
-    const content = e.querySelector('.s-text')?.value.trim() || '';
-    const fileUrl = e.querySelector('.s-file')?.value || '';
-
-    if (!student || !title || (!content && !fileUrl)) valid = false;
-
-    slides.push({ order: i + 1, student, title, content, fileUrl });
-  });
-
-  if (!valid) { alert('الرجاء تعبئة جميع الحقول الإلزامية (اسم الطالب، العنوان، والمحتوى أو الملف)'); return; }
-
-  const classVal = $('classSelect')?.value || '';
-  const dateVal = $('nextDay')?.innerText || '';
-
-  const payload = {
-    class: classVal,
-    date: dateVal,
-    slides,
-    status: 'pending',
-    timestamp: new Date().toISOString()
-  };
-
-  try {
-    if (editDraftId) {
-      await cloudSave('radios/' + editDraftId, payload);
-    } else {
-      await cloudPush('radios', payload);
-    }
-    bellSound(); alert(editDraftId ? '✅ تم تحديث الإذاعة بنجاح!' : '✅ تم إرسال الإذاعة بنجاح!');
-    closeOv('ambOverlay');
-    const ed = $('slidesEditor'); if (ed) ed.innerHTML = ''; slCnt = 0;
-  } catch (e) {
-    alert('حدث خطأ أثناء الإرسال للسحابة. يرجى التأكد من الإنترنت.');
-  }
-};
-
-// ─── ADMIN ───
-window.showTab = (tabId, btn) => {
-  document.querySelectorAll('.tab-body').forEach(c => c.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const tab = $(tabId); if (tab) tab.classList.add('active');
-  btn.classList.add('active'); clickSound();
-
-  if (tabId === 'tabAttend') populateAttendanceTable();
-};
-
-async function renderAdminRadios() {
-  const list = $('adminRadioList'); if (!list) return;
-
-  if (!S.radios.length) {
-    list.innerHTML = '<div class="empty-st"><i class="fas fa-inbox"></i><p>لا توجد إذاعات بعد</p></div>';
-    return;
-  }
-
-  list.innerHTML = S.radios.map((r, i) => {
-    const cls = r.class || 'فصل غير محدد';
-    const dt = r.date || '';
-    const slLen = r.slides ? r.slides.length : 0;
-    const isApp = r.status === 'approved';
-    const stat = !isApp ? '🟡 بانتظار المراجعة' : '✅ معتمدة';
-    const rid = r.id;
-    return '<div class="radio-entry">' +
-      '<div><h4>' + cls + ' — ' + dt + '</h4>' +
-      '<p>' + slLen + ' فقرة | ' + stat + '</p></div>' +
-      '<div class="re-btns">' +
-      (!isApp ? '<button class="btn btn-gold" onclick="approveR(\'' + rid + '\')"><i class="fas fa-check"></i> اعتماد</button>' : '') +
-      '<button class="btn" onclick="previewAdminR(' + i + ')"><i class="fas fa-play"></i> عرض</button>' +
-      '<button class="btn btn-red" onclick="deleteR(\'' + rid + '\')"><i class="fas fa-trash"></i> حذف</button>' +
-      '</div>' +
-      '</div>';
-  }).join('');
-
-  populateAttendanceRadios();
-}
-
-window.approveR = (id) => {
-  const r = S.radios.find(r => r.id === id);
-  if (!r) return;
-
-  // Clear previous approvals
-  const updates = {};
-  S.radios.forEach(x => {
-    if (x.status === 'approved') updates[`radios/${x.id}/status`] = 'pending';
-  });
-
-  updates[`radios/${id}/status`] = 'approved';
-  
-  // Update attendance
-  r.slides.forEach(sl => {
-    const attId = id + '_' + sl.student.replace(/\s+/g, '_');
-    updates[`attendance/${attId}`] = {
-      student: sl.student,
-      slide: sl.title,
-      status: 'حاضر',
-      class: r.class,
-      date: r.date,
-      radioId: id
-    };
-  });
-
-  db.ref().update(updates).then(() => {
-    alert('✅ تم اعتماد الإذاعة والمزامنة مع شاشة العرض!');
-  });
-};
-
-window.previewAdminR = i => {
-  const r = S.radios[i];
-  if (r && r.slides) { S.slides = r.slides; S.idx = 0; openOv('presOverlay'); renderPresSlide(); }
-};
-
-window.deleteR = (id) => {
-  if (!id) return;
-  if (!confirm('حذف هذه الإذاعة نهائياً من السحابة؟')) return;
-  cloudRemove('radios/' + id).then(() => {
-    alert('تم الحذف بنجاح');
-  });
-};
-
-window.saveSt = (key, btn) => {
-  const ids = { topic: 'stTopic', newsDuration: 'stNewsDuration', adminPw: 'stAdminPw' };
-  const el = $(ids[key]); if (!el) return;
-  const val = el.value.trim(); if (!val) return;
-
-  const updates = {};
-  if (key === 'adminPw') updates['pw/admin'] = val;
-  else if (key === 'newsDuration') updates['newsDuration'] = parseInt(val) || 8;
-  else updates[key] = val;
-
-  db.ref('settings').update(updates).then(() => {
-    if (btn) {
-      const old = btn.innerHTML;
-      btn.innerHTML = '<i class="fas fa-check"></i> تم الحفظ';
-      btn.classList.add('btn-success');
-      setTimeout(() => { btn.innerHTML = old; btn.classList.remove('btn-success'); }, 2000);
-    }
-  });
-};
-
-window.addTickerItem = () => {
-  const el = $('newTickerInput');
-  if (!el || !el.value.trim()) return;
-  const tArr = Array.isArray(S.ticker) ? S.ticker : [S.ticker];
-  tArr.push(el.value.trim());
-  cloudSave('settings/ticker', tArr).then(() => {
-    el.value = '';
-    renderTickerAdmin();
-  });
-};
-
-window.removeTickerItem = (idx) => {
-  if (!Array.isArray(S.ticker)) return;
-  S.ticker.splice(idx, 1);
-  cloudSave('settings/ticker', S.ticker).then(() => renderTickerAdmin());
-};
-
-window.renderTickerAdmin = () => {
-  const tl = $('tickerAdminList'); if(!tl) return;
-  if (!S.ticker || S.ticker.length === 0) { tl.innerHTML='<div style="opacity:0.6; padding:10px;">لا توجد أخبار مضافة</div>'; return; }
-  tl.innerHTML = S.ticker.map((t, i) => `
-    <div class="wisdom-item">
-      <span>${t}</span>
-      <button class="btn btn-red" style="padding:5px 10px; border-radius:10px; margin-right:auto;" onclick="removeTickerItem(${i})"><i class="fas fa-times"></i></button>
-    </div>
-  `).join('');
-};
+function playAnthem() { if (S.anthemUrl) playVideo(S.anthemUrl); else alert('لم يتم رفع نشيد وطني'); }
 
 function initInfoScreenLoop() {
   if(window.updateTickerUI) updateTickerUI();
   if(window.startNewsSlider) startNewsSlider();
-  
   let tickerIdx = 0;
   setInterval(() => {
-    const tDisp = $('tickerContent');
-    const pb = $('participantsBoard');
+    const tDisp = $('tickerContent'); const pb = $('participantsBoard');
     const approved = S.radios.find(r => r.status === 'approved');
-    
     if (pb) {
       if (approved && approved.slides) {
-        pb.innerHTML = approved.slides.map(s => 
-          `<div class="participant-card" style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;margin-bottom:10px;animation:fadeInRight 0.5s ease-out;">
-            <i class="fas fa-user-graduate" style="color:var(--gold);"></i> 
-            <span style="font-weight:600;">${s.student || 'مشارك'}</span>
-           </div>`
-        ).join('');
-      } else {
-        pb.innerHTML = `<div style="opacity:0.5; text-align:center; padding:20px; border:1px dashed rgba(255,255,255,0.1); border-radius:15px;">بانتظار إذاعة اليوم...</div>`;
-      }
+        pb.innerHTML = approved.slides.map(s => `<div class="participant-card"><i class="fas fa-user-graduate" style="color:var(--gold)"></i> <span>${s.student || 'مشارك'}</span></div>`).join('');
+      } else pb.innerHTML = `<div style="opacity:0.5; text-align:center; padding:20px;">بانتظار إذاعة اليوم...</div>`;
     }
-
     if (tDisp) {
-       let msg = '';
-       const approvedExists = approved && approved.slides && approved.slides.length > 0;
+       let msg = ''; const approvedExists = approved && approved.slides && approved.slides.length > 0;
        if (tickerIdx === 0 && approvedExists) {
-          const names = approved.slides.map(s => s.student).filter(x=>x).join(' ✦ ');
-          msg = 'المشاركين في إذاعة اليوم: ' + names;
+          msg = 'المشاركين في إذاعة اليوم: ' + approved.slides.map(s => s.student).filter(x=>x).join(' ✦ ');
        } else {
           const tArr = Array.isArray(S.ticker) ? S.ticker : ['ثانوية ابن سعدي ترحب بكم'];
-          const rIdx = (tickerIdx - (approvedExists ? 1 : 0)) % tArr.length;
-          msg = tArr[rIdx] || 'ثانوية ابن سعدي ترحب بكم';
+          msg = tArr[(tickerIdx - (approvedExists ? 1 : 0)) % tArr.length] || 'ثانوية ابن سعدي ترحب بكم';
        }
-       tDisp.innerText = msg;
-       tickerIdx++;
+       tDisp.innerText = msg; tickerIdx++;
     }
   }, 10000);
 }
@@ -1006,306 +300,228 @@ function initInfoScreenLoop() {
 let newsSliderTimer;
 window.startNewsSlider = () => {
   clearInterval(newsSliderTimer);
-  const img = $('newsImg');
-  const title = $('newsTitle');
-  const inds = $('newsIndicators');
+  const img = $('newsImg'); const title = $('newsTitle'); const inds = $('newsIndicators');
   if(!img || !title || !inds) return;
-  
-  if(!S.news || S.news.length === 0) {
-    img.style.display='none'; title.style.display='none'; inds.innerHTML=''; return;
-  }
-  
+  if(!S.news.length) { img.style.display='none'; title.style.display='none'; inds.innerHTML=''; return; }
   let cur = 0;
-  const showSlide = () => {
-    const n = S.news[cur];
-    if(!n) return;
+  const show = () => {
+    const n = S.news[cur]; if(!n) return;
     img.style.opacity = 0;
-    setTimeout(() => {
-      img.src = n.url; img.style.display='block';
-      img.style.opacity = 1;
-    }, 300);
-
-    if(n.title) { title.innerText = n.title; title.style.display='block'; } else { title.style.display='none'; }
-    
-    inds.innerHTML = S.news.map((_, i) => `<div style="width:${i===cur ? '40px' : '15px'}; height:5px; border-radius:3px; background:${i===cur ? 'var(--gold)' : 'rgba(255,255,255,0.3)'}; transition: all 0.5s ease;"></div>`).join('');
-    
+    setTimeout(() => { img.src = n.url; img.style.display='block'; img.style.opacity = 1; }, 300);
+    if(n.title) { title.innerText = n.title; title.style.display='block'; } else title.style.display='none';
+    inds.innerHTML = S.news.map((_, i) => `<div style="width:${i===cur ? '40px' : '15px'}; height:5px; border-radius:3px; background:${i===cur ? 'var(--gold)' : 'rgba(255,255,255,0.3)'}; transition: 0.5s;"></div>`).join('');
     cur = (cur + 1) % S.news.length;
   };
-  showSlide();
-  const dur = (S.newsDuration || 8) * 1000;
-  newsSliderTimer = setInterval(showSlide, dur);
+  show(); newsSliderTimer = setInterval(show, (S.newsDuration || 8) * 1000);
 }
 
-window.exportScheduleExcel = () => {
-  let csv = "\ufeffاليوم,الفصل,كلمة المرور\n";
-  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-  for(let i=0; i<5; i++) {
-    const s = S.schedule[i] || { class: 'غير محدد', pw: '----' };
-    csv += `${days[i]},${s.class},${s.pw}\n`;
-  }
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = "جدول_الإذاعة_الأسبوعي.csv";
-  link.click();
-};
-
-function checkAutoArchive() {
-  const now = new Date();
-  S.radios.forEach(r => {
-    if (r.status === 'approved' && r.timestamp) {
-      const rDate = new Date(r.timestamp);
-      const diff = (now - rDate) / (1000 * 3600 * 24);
-      if (diff > 7) cloudRemove('radios/' + r.id);
+window.saveSt = (key, btn) => {
+  const ids = { topic: 'stTopic', newsDuration: 'stNewsDuration', adminPw: 'stAdminPw' };
+  const el = $(ids[key]); if (!el || !el.value.trim()) return;
+  const updates = {};
+  if (key === 'adminPw') updates['pw/admin'] = el.value.trim();
+  else if (key === 'newsDuration') updates['newsDuration'] = parseInt(el.value) || 8;
+  else updates[key] = el.value.trim();
+  db.ref('settings').update(updates).then(() => {
+    if (btn) {
+      const old = btn.innerHTML; btn.innerHTML = '✅ تم الحفظ';
+      setTimeout(() => btn.innerHTML = old, 2000);
     }
   });
-}
-
-// ─── ATTENDANCE ───
-function populateAttendanceRadios() {
-  const sel = $('attendRadioSel'); if (!sel) return;
-  // Only show approved radios in attendance
-  const approvedOnes = S.radios.filter(r => r.status === 'approved');
-  sel.innerHTML = '<option value="">اختر إذاعة...</option>' +
-    approvedOnes.map(r => '<option value="' + r.id + '">' + r.class + ' - ' + r.date + '</option>').join('');
-}
-
-window.loadAttendance = () => {
-  const id = $('attendRadioSel').value;
-  S.currentRadioId = id;
-  populateAttendanceTable();
 };
 
-function populateAttendanceTable() {
-  const tb = $('attendBody'); if (!tb) return;
-  if (!S.currentRadioId || !S.attendance[S.currentRadioId]) {
-    tb.innerHTML = '<tr><td colspan="5" class="empty-st">الرجاء اختيار إذاعة معتمدة</td></tr>';
-    return;
-  }
-
-  const data = S.attendance[S.currentRadioId];
-  let i = 1;
-  tb.innerHTML = Object.entries(data).map(([student, info]) => {
-    const rowId = 'row-' + i;
-    const html = '<tr>' +
-      '<td>' + (i++) + '</td>' +
-      '<td>' + (info.class || '') + ' <br> ' + (info.date || '') + '</td>' +
-      '<td>' + student + '</td>' +
-      '<td><div class="attend-text-cell" onclick="toggleRowText(\'' + rowId + '\')">' + info.slide + '</div>' +
-      '<div id="' + rowId + '" class="attend-text-expanded" style="display:none">' + (info.content || 'لا يوجد نص') + '</div></td>' +
-      '<td>' +
-      '<select class="input-sm" onchange="updateAttend(\'' + student + '\', this.value)" style="' + (info.status === 'غائب' ? 'color:var(--red)' : 'color:var(--accent)') + '">' +
-      '<option value="حاضر" ' + (info.status === 'حاضر' ? 'selected' : '') + '>حاضر</option>' +
-      '<option value="غائب" ' + (info.status === 'غائب' ? 'selected' : '') + '>غائب</option>' +
-      '</select>' +
-      '</td>' +
-      '</tr>';
-    return html;
+window.renderAdminRadios = () => {
+  const list = $('adminRadioList'); if (!list) return;
+  if (!S.radios.length) { list.innerHTML = '<div class="empty-st"><p>لا توجد إذاعات بعد</p></div>'; return; }
+  list.innerHTML = S.radios.map((r, i) => {
+    const isApp = r.status === 'approved';
+    return `<div class="radio-entry">
+      <div><h4>${r.class || 'فصل غير محدد'} — ${r.date || ''}</h4><p>${r.slides?.length || 0} فقرة | ${isApp ? '✅ معتمدة' : '🟡 بانتظار المراجعة'}</p></div>
+      <div class="re-btns">
+        ${!isApp ? `<button class="btn btn-gold" onclick="approveR('${r.id}')"><i class="fas fa-check"></i> اعتماد</button>` : ''}
+        <button class="btn" onclick="previewAdminR(${i})"><i class="fas fa-play"></i> عرض</button>
+        <button class="btn btn-red" onclick="deleteR('${r.id}')"><i class="fas fa-trash"></i> حذف</button>
+      </div>
+    </div>`;
   }).join('');
-}
+};
 
-function initFloatingIcons() {
-  const bg = $('bgCanvas'); if(!bg) return;
-  const icons = ['fa-calculator', 'fa-ruler', 'fa-pen-nib', 'fa-book', 'fa-microscope', 'fa-atom', 'fa-pi', 'fa-shapes'];
-  setInterval(() => {
-    const i = document.createElement('i');
-    const icon = icons[Math.floor(Math.random() * icons.length)];
-    i.className = `fas ${icon} edu-icon`;
-    i.style.left = Math.random() * 100 + 'vw';
-    i.style.fontSize = (Math.random() * 20 + 20) + 'px';
-    i.style.animationDuration = (Math.random() * 10 + 15) + 's';
-    bg.appendChild(i);
-    setTimeout(() => i.remove(), 25000);
-  }, 3000);
-}
+window.approveR = (id) => {
+  const r = S.radios.find(x => x.id === id); if (!r) return;
+  const updates = {};
+  S.radios.forEach(x => { if (x.status === 'approved') updates[`radios/${x.id}/status`] = 'pending'; });
+  updates[`radios/${id}/status`] = 'approved';
+  r.slides.forEach(sl => {
+    const attId = id + '_' + sl.student.replace(/\s+/g, '_');
+    updates[`attendance/${attId}`] = { student: sl.student, slide: sl.title, status: 'حاضر', class: r.class, date: r.date, radioId: id };
+  });
+  db.ref().update(updates);
+};
+
+window.deleteR = id => confirm('حذف هذه الإذاعة؟') && cloudRemove('radios/' + id);
+window.previewAdminR = i => { const r = S.radios[i]; if (r?.slides) { S.slides = r.slides; S.idx = 0; openOv('presOverlay'); renderPresSlide(); } };
 
 window.renderScheduleAdmin = () => {
   const grid = $('scheduleGrid'); if(!grid) return;
   const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
   grid.innerHTML = days.map((day, i) => {
     const s = S.schedule[i] || { class: '1-1', pw: '' };
-    return `
-      <div style="display:flex; gap:10px; align-items:center; background:rgba(255,255,255,0.05); padding:10px; border-radius:12px;">
-        <div style="width:80px; font-weight:bold;">${day}</div>
-        <select class="input-field" style="margin:0; flex:1;" id="schClass${i}">
-          ${Array.from({length:3}, (_,r)=>Array.from({length:6}, (_,l)=> {
-            const val = (r+1)+'-'+(l+1);
-            return `<option value="${val}" ${s.class===val?'selected':''}>فصل ${val}</option>`;
-          })).flat().join('')}
-        </select>
-        <input type="text" class="input-field" style="margin:0; flex:1; -webkit-text-security: disc;" id="schPw${i}" placeholder="الرمز السري" value="${s.pw||''}">
-      </div>
-    `;
+    let opts = ''; for (let r=1; r<=3; r++) for (let l=1; l<=6; l++) { const v = r+'-'+l; opts += `<option value="${v}" ${s.class===v?'selected':''}>فصل ${v}</option>`; }
+    return `<div style="display:flex; gap:10px; align-items:center; background:rgba(255,255,255,0.05); padding:10px; border-radius:12px;">
+      <div style="width:80px; font-weight:bold;">${day}</div>
+      <select class="input-field" style="margin:0; flex:1;" id="schClass${i}">${opts}</select>
+      <input type="text" class="input-field" style="margin:0; flex:1; -webkit-text-security: disc;" id="schPw${i}" value="${s.pw||''}">
+    </div>`;
   }).join('');
 };
 
-window.saveSchedule = (btn) => {
-  const updates = {};
-  for(let i=0; i<5; i++) {
-    updates[`schedule/${i}`] = {
-      class: $(`schClass${i}`).value,
-      pw: $(`schPw${i}`).value.trim()
-    };
-  }
-  db.ref().update(updates).then(() => {
-    if(btn) {
-      const old = btn.innerHTML;
-      btn.innerHTML = '<i class="fas fa-check"></i> تم حفظ الجدول';
-      setTimeout(() => btn.innerHTML = old, 2000);
-    }
-  });
+window.saveSchedule = btn => {
+  const ups = {}; for(let i=0; i<5; i++) ups[`schedule/${i}`] = { class: $(`schClass${i}`).value, pw: $(`schPw${i}`).value.trim() };
+  db.ref().update(ups).then(() => { if(btn) { const old = btn.innerHTML; btn.innerHTML = '✅ تم الحفظ'; setTimeout(() => btn.innerHTML = old, 2000); } });
+};
+
+window.addTickerItem = () => {
+  const el = $('newTickerInput'); if (!el?.value.trim()) return;
+  const tArr = Array.isArray(S.ticker) ? S.ticker : [S.ticker]; tArr.push(el.value.trim());
+  cloudSave('settings/ticker', tArr).then(() => { el.value = ''; renderTickerAdmin(); });
+};
+window.removeTickerItem = idx => { S.ticker.splice(idx, 1); cloudSave('settings/ticker', S.ticker).then(() => renderTickerAdmin()); };
+window.renderTickerAdmin = () => {
+  const tl = $('tickerAdminList'); if(!tl) return;
+  tl.innerHTML = (S.ticker || []).map((t, i) => `<div class="wisdom-item"><span>${t}</span><button class="btn btn-red" style="padding:5px 10px; margin-right:auto;" onclick="removeTickerItem(${i})">✕</button></div>`).join('');
 };
 
 window.renderAdminNews = () => {
-  const list = $('adminNewsList'); if(!list) return;
-  if(!S.news || S.news.length===0) { list.innerHTML='<div class="empty-st">لا توجد صور إخبارية مضافة</div>'; return; }
-  list.innerHTML = S.news.map(n => `
-    <div class="wisdom-item">
-      <img src="${n.url}" style="height:40px; width:40px; object-fit:cover; border-radius:5px; margin-left:10px;">
-      <span style="flex:1;">${n.title || 'بدون عنوان'}</span>
-      <button class="btn btn-red" onclick="deleteNews('${n.id}')"><i class="fas fa-trash"></i></button>
-    </div>
-  `).join('');
+  const list = $('adminNewsList'); if (!list) return;
+  list.innerHTML = S.news.map(n => `<div class="wisdom-item"><img src="${n.url}" style="width:40px;height:40px;object-fit:cover;border-radius:5px;margin-left:10px;"><span>${n.title || 'بدون عنوان'}</span><button class="btn btn-red" onclick="deleteNews('${n.id}')">✕</button></div>`).join('');
 };
-
 window.addAdminNews = () => {
-  if (typeof uploadcare === 'undefined') return;
   uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
-    file.promise().done(info => {
-      const title = prompt('عنوان الخبر (اختياري):');
-      cloudPush('news', { url: info.cdnUrl, title: title || '' });
-    });
+    file.promise().done(info => { const title = prompt('عنوان الخبر:'); cloudPush('news', { url: info.cdnUrl, title: title || '' }); });
   });
 };
-
-window.deleteNews = (id) => {
-  if(confirm('حذف هذا الخبر؟')) cloudRemove('news/' + id);
-};
+window.deleteNews = id => confirm('حذف هذا الخبر؟') && cloudRemove('news/' + id);
 
 window.renderAdminQuran = () => {
-  const list = $('quranListAdmin'); if(!list) return;
-  if(!S.quranVideos || S.quranVideos.length===0) { list.innerHTML='<div style="opacity:0.6; padding:10px;">لا توجد تلاوات مضافة</div>'; return; }
-  list.innerHTML = S.quranVideos.map((v, i) => `
-    <div class="wisdom-item">
-      <span>${v.label}</span>
-      <button class="btn btn-red" onclick="deleteQuranVideo(${i})"><i class="fas fa-trash"></i></button>
-    </div>
-  `).join('');
-  
+  const list = $('quranAdminList'); if (!list) return;
+  list.innerHTML = S.quranVideos.map((v, i) => `<div class="wisdom-item"><span>${v.label}</span><button class="btn btn-red" onclick="deleteQuranVideo(${i})">✕</button></div>`).join('');
   const userList = $('quranListUser');
-  if(userList) {
-    userList.innerHTML = S.quranVideos.map(v => `
-      <div class="quran-item" onclick="playVideo('${v.url}')">
-        <i class="fas fa-play-circle"></i> <span>${v.label}</span>
-      </div>
-    `).join('');
-  }
+  if(userList) userList.innerHTML = S.quranVideos.map(v => `<div class="quran-item" onclick="playVideo('${v.url}')"><i class="fas fa-play-circle"></i> <span>${v.label}</span></div>`).join('');
 };
-
 window.addQuranVideoEntry = () => {
-  if (typeof uploadcare === 'undefined') return;
   uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
-    file.promise().done(info => {
-      const label = prompt('اسم القارئ أو السورة:');
-      if(!label) return;
-      const newList = [...(S.quranVideos || [])];
-      newList.push({ url: info.cdnUrl, label });
-      cloudSave('quranVideos', newList);
-    });
+    file.promise().done(info => { const label = prompt('اسم القارئ/السورة:'); if(label) { const nl = [...S.quranVideos, {url:info.cdnUrl, label}]; cloudSave('quranVideos', nl); } });
   });
 };
-
-window.deleteQuranVideo = (idx) => {
-  if(confirm('حذف هذه التلاوة؟')) {
-    const newList = [...(S.quranVideos || [])];
-    newList.splice(idx, 1);
-    cloudSave('quranVideos', newList);
-  }
-};
-
-window.toggleRowText = (id) => {
-  const el = $(id);
-  if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
-};
-
-window.editR = (id) => {
-  const r = S.radios.find(x => x.id.toString() === id.toString());
-  if (!r) return;
-  S.role = 'amb'; 
-  setNextDate();
-  
-  editDraftId = r.id;
-  const cdisp = $('classSelectDisplay');
-  if(cdisp) cdisp.innerText = r.class;
-  $('nextDay').innerText = r.date;
-  
-  const ed = $('slidesEditor');
-  ed.innerHTML = '';
-  slCnt = 0;
-  r.slides.forEach(sl => addSlide(sl));
-  
-  openOv('ambOverlay');
-  $('ambSubmitBtnTxt').innerText = "تحديث الإذاعة (إدارة)";
-};
-
-window.updateAttend = (student, status) => {
-  if (S.currentRadioId) {
-    const attId = S.currentRadioId + '_' + student.replace(/\s+/g, '_');
-    cloudUpdate(`attendance/${attId}`, { status });
-  }
-};
-
-window.exportExcel = () => {
-  if (!S.currentRadioId || !S.attendance) {
-    alert("لا توجد بيانات للتصدير"); return;
-  }
-  let csv = "\ufeffالفصل,التاريخ,الطالب,الفقرة,الحالة\n";
-  const data = Array.isArray(S.attendance) ? S.attendance.filter(a => a.radioId === S.currentRadioId) : [];
-  data.forEach(i => {
-    csv += `${i.class},${i.date},${i.student},${i.slide},${i.status}\n`;
-  });
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `تقرير_حضور_${S.currentRadioId}.csv`;
-  link.click();
-};
-
-window.deleteAttendanceRecord = () => {
-  if (!S.currentRadioId) {
-    alert("الرجاء اختيار إذاعة أولاً من القائمة المنسدلة"); return;
-  }
-  if (!confirm('هل أنت متأكد من مسح جميع سجلات الحضور لهذه الإذاعة؟')) return;
-  
-  const updates = {};
-  S.attendance.forEach(att => {
-    if (att.radioId === S.currentRadioId) updates[`attendance/${att.id}`] = null;
-  });
-  
-  db.ref().update(updates).then(() => {
-    alert('تم مسح سجل الحضور لهذه الإذاعة.');
-  });
-};
+window.deleteQuranVideo = idx => { const nl = [...S.quranVideos]; nl.splice(idx, 1); cloudSave('quranVideos', nl); };
 
 function renderAdminContent() {
-  const up = $('anthemUploadBtn');
-  if(up) up.style.display = S.anthemUrl ? 'none' : 'block';
-  const del = $('anthemDeleteBtn');
-  if(del) del.style.display = S.anthemUrl ? 'block' : 'none';
+  const up = $('anthemUploadBtn'); if(up) up.style.display = S.anthemUrl ? 'none' : 'block';
+  const del = $('anthemDeleteBtn'); if(del) del.style.display = S.anthemUrl ? 'block' : 'none';
 }
-
 window.uploadAnthemVideo = () => {
-  if (typeof uploadcare === 'undefined') return;
-  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
-    file.promise().done(info => {
-      cloudUpdate('settings', { anthemUrl: info.cdnUrl }).then(() => alert('تم رفع النشيد وتحديثه!'));
-    });
+  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url', locale: 'ar' }).done(file => {
+    file.promise().done(info => cloudUpdate('settings', { anthemUrl: info.cdnUrl }));
   });
 };
+window.deleteAnthemVideo = () => confirm('حذف النشيد؟') && cloudUpdate('settings', { anthemUrl: null });
 
-window.deleteAnthemVideo = () => {
-  if(confirm('حذف النشيد الوطني الحالي؟')) {
-    cloudUpdate('settings', { anthemUrl: null }).then(() => alert('تم الحذف.'));
-  }
+function startRadio() { S.idx = -1; openOv('presOverlay'); renderStart(); }
+function renderStart() {
+  $('presContent').innerHTML = `<div style="text-align:center;margin-top:10vh"><i class="fas fa-microphone-lines" style="font-size:8rem;color:var(--gold);display:block;margin-bottom:25px"></i><div class="ps-student">الإذاعة المدرسية</div><div class="ps-title">موضوع اليوم: ${S.topic}</div><button class="btn btn-gold" style="margin-top:35px;padding:16px 55px;" onclick="loadAndRun()">بدء البث</button></div>`;
+  $('slideCounter').innerText = 'الاستعداد'; $('nextBtn').disabled = true; $('prevBtn').disabled = true;
+}
+window.loadAndRun = () => {
+  const approved = S.radios.find(r => r.status === 'approved');
+  S.slides = approved ? approved.slides : [{ student: 'النظام', title: 'تنبيه', content: 'لا توجد إذاعة معتمدة' }];
+  S.idx = 0; renderPresSlide();
+};
+function renderPresSlide() {
+  const c = $('presContent'); if (!c || S.idx >= S.slides.length) { renderEnd(); return; }
+  const sl = S.slides[S.idx];
+  let media = sl.fileUrl ? (/\.(mp4|webm)$/i.test(sl.fileUrl) ? `<video src="${sl.fileUrl}" controls autoplay></video>` : `<img src="${sl.fileUrl}" onclick="zoomMedia(this.src)">`) : '';
+  c.innerHTML = `<div class="pres-slide"><div class="ps-title">${sl.title||''}</div><div class="ps-student">${sl.student||''}</div><div class="ps-text">${sl.content||''}</div><div class="ps-media">${media}</div></div>`;
+  $('slideCounter').innerText = (S.idx + 1) + ' / ' + S.slides.length;
+  $('prevBtn').disabled = (S.idx === 0); $('nextBtn').disabled = false; bellSound();
+}
+window.nextSlide = () => { S.idx++; renderPresSlide(); };
+window.prevSlide = () => { if (S.idx > 0) { S.idx--; renderPresSlide(); } };
+function renderEnd() {
+  $('presContent').innerHTML = `<div style="text-align:center;margin-top:10vh"><i class="fas fa-check-circle" style="font-size:7rem;color:var(--accent);display:block;margin-bottom:25px"></i><div class="ps-student">انتهت الإذاعة</div><button class="btn btn-gold" onclick="startRadio()">إعادة العرض</button></div>`;
+  $('slideCounter').innerText = 'النهاية'; $('nextBtn').disabled = true; $('prevBtn').disabled = true;
+}
+
+let slCnt = 0; let editDraftId = null;
+window.addSlide = (data = null) => {
+  slCnt++; const ed = $('slidesEditor'); if (!ed) return;
+  const d = document.createElement('div'); d.className = 'slide-entry';
+  const isF = (data && data.fileUrl);
+  d.innerHTML = `<div class="se-head"><h4>فقرة <span class="sl-num">${slCnt}</span></h4><div style="display:flex;gap:8px"><button class="btn btn-red" onclick="removeSlide(this)">✕</button></div></div>
+    <div class="se-fields"><input class="input-field s-student" placeholder="الاسم" value="${data?.student||''}"> <input class="input-field s-title" placeholder="العنوان" value="${data?.title||''}"></div>
+    <div class="se-types"><button class="type-btn ${!isF?'active':''}" onclick="setType(this,'text')">نص</button><button class="type-btn ${isF?'active':''}" onclick="setType(this,'file')">ميديا</button></div>
+    <div class="s-area">${isF ? `<input type="hidden" class="s-file" value="${data.fileUrl}"><div class="s-file-name">تم إرفاق ملف</div>` : `<textarea class="input-field s-text" rows="3">${data?.content||''}</textarea>`}</div>`;
+  ed.appendChild(d); updateSlideNumbers();
+};
+window.setType = (btn, type) => {
+  const area = btn.closest('.slide-entry').querySelector('.s-area');
+  area.innerHTML = type === 'file' ? `<button class="btn btn-accent" onclick="ambUploadFile(this)">رفع ملف</button><input type="hidden" class="s-file">` : `<textarea class="input-field s-text" rows="3"></textarea>`;
+};
+window.ambUploadFile = btn => {
+  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
+    file.promise().done(info => { btn.parentElement.querySelector('.s-file').value = info.cdnUrl; alert('تم الرفع'); });
+  });
+};
+window.submitRadio = async () => {
+  const slides = Array.from(document.querySelectorAll('.slide-entry')).map(e => ({
+    student: e.querySelector('.s-student').value.trim(),
+    title: e.querySelector('.s-title').value.trim(),
+    content: e.querySelector('.s-text')?.value.trim() || '',
+    fileUrl: e.querySelector('.s-file')?.value || ''
+  }));
+  if(!slides.length) return;
+  const id = editDraftId || Date.now();
+  cloudUpdate(`radios/${id}`, { class: S.ambClass, date: new Date().toLocaleDateString('ar-SA'), status: 'pending', slides, timestamp: Date.now() }).then(() => alert('تم الإرسال'));
 };
 
+function updateSlideNumbers() { document.querySelectorAll('.slide-entry').forEach((e, i) => e.querySelector('.sl-num').innerText = i+1); }
+window.removeSlide = btn => { btn.closest('.slide-entry').remove(); updateSlideNumbers(); };
+function setNextDate() { const d = new Date(); d.setDate(d.getDate()+1); $('nextDay').innerText = d.toLocaleDateString('ar-SA'); }
+window.checkAmbassadorDraft = () => {
+  const existing = S.radios.find(r => r.class === S.ambClass && r.status === 'pending');
+  if (existing) { editDraftId = existing.id; $('slidesEditor').innerHTML = ''; existing.slides.forEach(s => addSlide(s)); }
+  else if (!$('slidesEditor').children.length) addSlide();
+};
+
+function initFloatingIcons() {
+  const bg = $('bgCanvas'); if(!bg) return;
+  const icons = ['fa-calculator', 'fa-ruler', 'fa-pen-nib', 'fa-book', 'fa-microscope', 'fa-atom', 'fa-pi', 'fa-shapes'];
+  setInterval(() => {
+    const i = document.createElement('i'); i.className = `fas ${icons[Math.floor(Math.random() * icons.length)]} edu-icon`;
+    i.style.left = Math.random() * 100 + 'vw'; i.style.fontSize = (Math.random() * 20 + 20) + 'px';
+    i.style.animationDuration = (Math.random() * 10 + 15) + 's'; bg.appendChild(i); setTimeout(() => i.remove(), 25000);
+  }, 3000);
+}
+
+function checkAutoArchive() {
+  const now = new Date();
+  S.radios.forEach(r => { if (r.status === 'approved' && r.timestamp && (now - r.timestamp) > 7*24*3600*1000) cloudRemove('radios/' + r.id); });
+}
+
+window.exportScheduleExcel = () => {
+  let csv = "\ufeffاليوم,الفصل,الرمز\n"; const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  for(let i=0; i<5; i++) { const s = S.schedule[i] || { class: '?', pw: '?' }; csv += `${days[i]},${s.class},${s.pw}\n`; }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "جدول_الإذاعة.csv"; link.click();
+};
+
+function populateAttendanceTable() {
+  const tb = $('attendBody'); if (!tb || !S.currentRadioId) return;
+  const data = S.attendance.filter(a => a.radioId === S.currentRadioId);
+  tb.innerHTML = data.map((info, i) => `<tr><td>${i+1}</td><td>${info.class} - ${info.date}</td><td>${info.student}</td><td>${info.slide}</td><td><select onchange="updateAttend('${info.student}', this.value)"><option value="حاضر" ${info.status==='حاضر'?'selected':''}>حاضر</option><option value="غائب" ${info.status==='غائب'?'selected':''}>غائب</option></select></td></tr>`).join('');
+}
+window.updateAttend = (student, status) => cloudUpdate(`attendance/${S.currentRadioId}_${student.replace(/\s+/g,'_')}`, { status });
+window.loadAttendance = () => { S.currentRadioId = $('attendRadioSel').value; populateAttendanceTable(); };
+function populateAttendanceRadios() {
+  const sel = $('attendRadioSel'); if (!sel) return;
+  sel.innerHTML = '<option value="">اختر...</option>' + S.radios.filter(r => r.status === 'approved').map(r => `<option value="${r.id}">${r.class} - ${r.date}</option>`).join('');
+}

@@ -78,7 +78,7 @@
       <i class="fas fa-display"></i>
       <div>
         <h3>شاشة المعلومات</h3>
-        <p>الساعة · الحكمة · الحضور</p>
+        <p>الأخبار · الوقت · المشاركات</p>
       </div>
     </div>
   </section>
@@ -101,19 +101,33 @@
   <!-- 1. INFO SCREEN -->
   <div class="overlay" id="infoOverlay">
     <button class="x-btn" onclick="closeOv('infoOverlay')">✕</button>
-    <div class="info-screen">
-      <div id="infoClock" class="info-clock">00:00</div>
-      <div id="infoDate2" class="info-date-big"></div>
-      <div id="infoTopic2" class="info-topic-big">موضوع اليوم: ...</div>
-      <!-- News Slider -->
-      <div id="newsSlider" class="news-slider">
-        <img id="newsImg" src="" class="news-img" style="display:none;">
-        <div id="newsTitle" class="news-title-overlay" style="display:none;"></div>
+    <div class="info-screen" style="display: flex; flex-direction: row; height: 100vh; padding: 20px; padding-bottom: 80px; box-sizing: border-box; background: rgba(20,25,22,0.95); gap: 20px; position:relative;">
+      
+      <!-- Right Side: News Slider (75%) -->
+      <div id="newsSlider" class="news-slider" style="flex: 3; position: relative; border-radius: 20px; overflow: hidden; background: rgba(0,0,0,0.5); display:flex; flex-direction:column; justify-content:center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        <img id="newsImg" src="" class="news-img" style="width: 100%; height: 100%; object-fit: contain; display:none; transition: opacity 0.5s;">
+        <div id="newsTitle" class="news-title-overlay" style="display:none; position:absolute; bottom:0; width:100%; background:linear-gradient(transparent, rgba(0,0,0,0.8)); color:#fff; padding:40px 20px 20px; font-size:2.5rem; text-align:center; text-shadow: 0 2px 4px rgba(0,0,0,0.8);"></div>
+        <div id="newsIndicators" style="position:absolute; top:20px; width:100%; display:flex; justify-content:center; gap:8px;"></div>
       </div>
-      <!-- Participants Display -->
-      <div class="participants-board" id="participantsBoard"></div>
+
+      <!-- Left Side: Info (25%) -->
+      <div style="flex: 1; display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+        <div id="infoClock" class="info-clock" style="font-size: 5.5rem; margin-bottom: 10px; color: #fff; text-shadow: 0 0 20px rgba(255,255,255,0.3);">00:00</div>
+        <div id="infoDate2" class="info-date-big" style="font-size: 1.4rem; margin-bottom: 40px; text-align: center; opacity:0.8;"></div>
+        
+        <div style="background: rgba(var(--gold-rgb), 0.1); border: 1px solid rgba(var(--gold-rgb), 0.3); border-radius: 15px; padding: 20px; width: 100%; margin-bottom: 30px;">
+          <div style="font-size:1rem; opacity:0.7; margin-bottom:5px; text-align:center;"><i class="fas fa-star"></i> موضوع اليوم</div>
+          <div id="infoTopic2" class="info-topic-big" style="font-size: 1.6rem; color: var(--gold); text-align: center; line-height: 1.4;">جاري التحميل...</div>
+        </div>
+        
+        <div style="width: 100%; flex:1; display:flex; flex-direction:column;">
+          <div style="font-size:1.1rem; margin-bottom:15px; text-align:center; opacity:0.8;"><i class="fas fa-users"></i> إذاعة اليوم</div>
+          <div class="participants-board" id="participantsBoard" style="width: 100%; background:transparent; padding:0;"></div>
+        </div>
+      </div>
+      
       <!-- News Ticker -->
-      <div class="news-ticker">
+      <div class="news-ticker" style="position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(0,0,0,0.8); padding: 15px 0; border-top: 2px solid var(--accent); z-index:10;">
         <div class="ticker-wrap">
           <div id="tickerContent" class="ticker-move">ثانوية ابن سعدي ترحب بكم...</div>
         </div>
@@ -138,8 +152,7 @@
   <div class="overlay" id="videoOverlay" style="z-index: 3000;">
     <div class="video-container" style="position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
     <button class="x-btn" onclick="closeVideo()">✕</button>
-    <button class="fs-btn" onclick="toggleVideoFullscreen()" style="position:absolute; top:22px; left:28px; background:none; border:none; color:white; font-size:2rem; cursor:pointer;"><i class="fas fa-expand"></i></button>
-    <video id="mainVideo" class="main-video" controls></video>
+    <video id="mainVideo" class="main-video" controls preload="metadata" playsinline></video>
   </div>
   </div>
 
@@ -149,11 +162,7 @@
       <button class="x-btn" onclick="closeOv('loginOverlay')">✕</button>
       <div id="loginIcon" class="login-icon"></div>
       <h2 id="loginTitle" class="modal-title">دخول</h2>
-      <div id="loginClassSelectWrap" class="fg" style="display:none; text-align:right;">
-        <label>الفصل</label>
-        <select id="loginClassSelect" class="input-field"></select>
-      </div>
-      <input type="password" id="loginPass" class="input-field" placeholder="الرمز السري">
+      <input type="text" id="loginPass" class="input-field" placeholder="الرمز السري" style="-webkit-text-security: disc; text-align:center; font-size:1.5rem; letter-spacing:5px;">
       <div id="loginError" class="err-msg" style="display:none">رمز خاطئ!</div>
       <button class="btn full-btn mt20" onclick="validateLogin()">دخول <i class="fas fa-arrow-left"></i></button>
     </div>
@@ -168,8 +177,9 @@
         <button class="btn btn-accent" onclick="addSlide()"><i class="fas fa-plus"></i> فقرة جديدة</button>
       </div>
       <div class="form-row">
-        <div class="fg"><label>الفصل</label><select id="classSelect" class="input-field"
-            onchange="checkAmbassadorDraft()"></select></div>
+        <div class="fg"><label>الفصل</label>
+          <div id="classSelectDisplay" class="input-field date-disp" style="background:rgba(255,255,255,0.1); color:var(--gold);"></div>
+        </div>
         <div class="fg"><label>تاريخ الإذاعة</label>
           <div id="nextDay" class="input-field date-disp"></div>
         </div>
@@ -205,13 +215,12 @@
           <div class="scard">
             <label><i class="fas fa-star"></i> موضوع اليوم</label>
             <input type="text" id="stTopic" class="input-field" placeholder="موضوع اليوم...">
-            <button class="btn mt10" onclick="saveSt('topic')">حفظ</button>
+            <button class="btn mt10" onclick="saveSt('topic', this)">حفظ</button>
           </div>
-          <!-- Removed Wisdom & Ambassador Password -->
           <div class="scard">
             <label><i class="fas fa-key"></i> كلمة مرور الإدارة</label>
-            <input type="text" id="stAdminPw" class="input-field" placeholder="Admin000">
-            <button class="btn mt10" onclick="saveSt('adminPw')">حفظ</button>
+            <input type="text" id="stAdminPw" class="input-field" placeholder="رمز الإدارة" style="-webkit-text-security: disc;">
+            <button class="btn mt10" onclick="saveSt('adminPw', this)">حفظ</button>
           </div>
         </div>
       </div>
@@ -255,9 +264,21 @@
             </div>
             <div id="adminNewsList" class="wisdom-list" style="max-height:250px"></div>
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.1);">
+              <label><i class="fas fa-stopwatch"></i> مدة عرض الصورة في الأخبار (ثواني)</label>
+              <div style="display:flex; gap:10px;">
+                <input type="number" id="stNewsDuration" class="input-field" value="8" style="max-width:100px; margin-bottom:0;">
+                <button class="btn btn-gold" onclick="saveSt('newsDuration', this)">حفظ المدة</button>
+              </div>
+            </div>
+            
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.1);">
               <label><i class="fas fa-bullhorn"></i> الشريط الإخباري المتحرك</label>
-              <input type="text" id="stTicker" class="input-field" placeholder="مثال: نرحب بضيوفنا الكرام في ثانوية ابن سعدي...">
-              <button class="btn mt10 btn-gold" onclick="saveSt('ticker')">حفظ الشريط الإخباري</button>
+              <p style="opacity:0.7; font-size:0.9rem; margin-bottom:10px;">أضف أخباراً لتدور في الشريط أسفل الشاشة. سيتم أيضاً عرض أسماء المشاركين في الإذاعة تلقائياً.</p>
+              <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <input type="text" id="newTickerInput" class="input-field" placeholder="أضف خبراً جديداً للشريط..." style="margin-bottom:0;">
+                <button class="btn btn-accent" onclick="addTickerItem()"><i class="fas fa-plus"></i> إضافة</button>
+              </div>
+              <div id="tickerAdminList" class="wisdom-list" style="max-height:200px"></div>
             </div>
           </div>
         </div>
@@ -288,15 +309,17 @@
       </table>
       </div>
 
-      <!-- TAB: SCHEDULE -->
       <div id="tabSchedule" class="tab-body">
         <div class="scard full-col">
           <label><i class="fas fa-calendar-alt"></i> جدول الإذاعة الأسبوعي وكلمات المرور</label>
-          <p style="opacity:0.8; font-size:0.9rem; margin-bottom:15px;">قم بتعيين فصل لكل يوم. لا يمكن للسفير الدخول إلا في يومه المخصص وباستخدام كلمة المرور الخاصة بفصله (تم توليد كلمات مرور فريدة تلقائياً).</p>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <p style="opacity:0.8; font-size:0.9rem; margin-bottom:15px; max-width:70%;">قم بتعيين فصل لكل يوم. لا يمكن للسفير الدخول إلا في يومه المخصص وباستخدام كلمة المرور الخاصة بفصله. كلمات المرور ثابتة ويمكنك تعديلها.</p>
+            <button class="btn btn-accent" onclick="exportScheduleExcel()"><i class="fas fa-file-excel"></i> تصدير الجدول للطلاب</button>
+          </div>
           <div id="scheduleGrid" style="display:flex; flex-direction:column; gap:10px;">
             <!-- Populated by JS -->
           </div>
-          <button class="btn btn-gold full-btn mt20" onclick="saveSchedule()"><i class="fas fa-save"></i> حفظ الجدول وكلمات المرور</button>
+          <button class="btn btn-gold full-btn mt20" onclick="saveSchedule(this)"><i class="fas fa-save"></i> حفظ الجدول وكلمات المرور</button>
         </div>
       </div>
     </div>

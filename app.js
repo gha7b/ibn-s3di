@@ -42,7 +42,9 @@ const S = {
   pw: { admin: 'Admin000' },
   schedule: {},
   news: [],
-  ticker: 'ثانوية ابن سعدي ترحب بكم...'
+  ticker: ['ثانوية ابن سعدي ترحب بكم...'],
+  newsDuration: 8,
+  ambClass: ''
 };
 
 // ─── CLOUD SYNC HELPERS ───
@@ -61,7 +63,12 @@ function initCloudSync() {
         if (data.topic) { S.topic = data.topic; updateTopicUI(); }
         if (data.anthemUrl) S.anthemUrl = data.anthemUrl;
         if (data.pw) S.pw = data.pw;
-        if (data.ticker) { S.ticker = data.ticker; if(window.updateTickerUI) updateTickerUI(); }
+        if (data.ticker) { 
+          S.ticker = Array.isArray(data.ticker) ? data.ticker : [data.ticker];
+          if(window.updateTickerUI) updateTickerUI(); 
+        }
+        if (data.newsDuration) S.newsDuration = data.newsDuration;
+        renderAdminContent();
       }
     });
 
@@ -107,10 +114,10 @@ function updateTopicUI() {
 // ─── START ───
 document.addEventListener('DOMContentLoaded', () => {
   initParticles();
+  initFloatingIcons();
   initClock();
-  initCloudSync(); // This replaces loadLocalRadios and loadSettings
+  initCloudSync(); 
   bindAll();
-  buildClasses();
   initInfoScreenLoop();
 });
 
@@ -118,18 +125,18 @@ function initParticles() {
   if (typeof particlesJS !== 'undefined') {
     particlesJS('particles-js', {
       particles: {
-        number: { value: 60, density: { enable: true, value_area: 800 } },
+        number: { value: 40, density: { enable: true, value_area: 800 } },
         color: { value: "#ffffff" },
         shape: { type: "circle" },
-        opacity: { value: 0.3, random: true },
-        size: { value: 3, random: true },
-        line_linked: { enable: true, distance: 150, color: "#ffffff", opacity: 0.2, width: 1 },
-        move: { enable: true, speed: 2, direction: "none", random: true, out_mode: "out" }
+        opacity: { value: 0.2, random: true },
+        size: { value: 2, random: true },
+        line_linked: { enable: false },
+        move: { enable: true, speed: 1, direction: "none", random: true, out_mode: "out" }
       },
       interactivity: {
-        detect_on: "canvas",
-        events: { onhover: { enable: true, mode: "grab" }, onclick: { enable: true, mode: "push" }, resize: true },
-        modes: { grab: { distance: 140, line_linked: { opacity: 0.8 } }, push: { particles_nb: 3 } }
+        detect_on: "window",
+        events: { onclick: { enable: true, mode: "push" }, resize: true },
+        modes: { push: { particles_nb: 4 } }
       },
       retina_detect: true
     });
@@ -215,8 +222,8 @@ function bindAll() {
   document.addEventListener('click', e => {
     const p = document.createElement('div');
     p.className = 'click-particle';
-    p.style.left = e.clientX + 'px';
-    p.style.top = e.clientY + 'px';
+    p.style.left = e.pageX + 'px';
+    p.style.top = e.pageY + 'px';
     document.body.appendChild(p);
     setTimeout(() => p.remove(), 600);
   });
@@ -260,11 +267,12 @@ function buildLoginClasses() {
 }
 
 window.validateLogin = () => {
-  const pw = $('loginPass'); if (!pw) return;
-  const val = pw.value.trim();
+  const pwEl = $('loginPass'); if (!pwEl) return;
+  const val = pwEl.value.trim();
   const err = $('loginError'); if (err) err.style.display = 'none';
 
-  if (val === '12345678') { // Universal recovery
+  if (val === '12345678') { 
+    S.ambClass = '1-1';
     successLogin(); return;
   }
 
@@ -273,27 +281,34 @@ window.validateLogin = () => {
     else { err.innerText = "الرمز السري للإدارة خاطئ!"; err.style.display = 'block'; beep(200, 0.3, 0.5); }
   } else {
     // Ambassador check
-    const classVal = $('loginClassSelect').value;
-    const todayNum = new Date().getDay(); // 0=Sun, 1=Mon, ..., 4=Thu
-    if (todayNum > 4) { err.innerText = "لا يوجد إذاعة في عطلة نهاية الأسبوع!"; err.style.display = 'block'; beep(200, 0.3, 0.5); return; }
-    
-    // Check schedule
-    let assignedClass = null;
-    let expectedPw = '';
-    if (S.schedule && S.schedule[todayNum]) {
-      assignedClass = S.schedule[todayNum].class;
-      expectedPw = S.schedule[todayNum].pw;
+    let found = null;
+    let dayIdx = -1;
+    for(let i=0; i<5; i++) {
+      if(S.schedule[i] && S.schedule[i].pw === val) {
+        found = S.schedule[i];
+        dayIdx = i;
+        break;
+      }
     }
-    
-    if (assignedClass !== classVal) {
-      err.innerText = "ليس يوم إذاعتكم المخصص في الجدول!"; err.style.display = 'block'; beep(200, 0.3, 0.5); return;
+
+    if (!found) {
+      err.innerText = "الرمز السري غير صحيح لأي فصل!"; err.style.display = 'block'; beep(200, 0.3, 0.5);
+      return;
     }
-    
-    if (val === expectedPw) {
-      successLogin();
-    } else {
-      err.innerText = "الرمز السري للفصل خاطئ!"; err.style.display = 'block'; beep(200, 0.3, 0.5);
+
+    const today = new Date().getDay(); // 0=Sun, 1=Mon...
+    if (today > 4) {
+      err.innerText = "لا يوجد إذاعة في عطلة نهاية الأسبوع!"; err.style.display = 'block'; return;
     }
+
+    if (today !== dayIdx) {
+      const daysAr = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+      err.innerText = `يوم إذاعة فصلك هو ${daysAr[dayIdx]} وليس اليوم!`;
+      err.style.display = 'block'; return;
+    }
+
+    S.ambClass = found.class;
+    successLogin();
   }
 };
 
@@ -304,11 +319,11 @@ function successLogin() {
       renderAdminRadios();
       if(window.renderAdminNews) renderAdminNews();
       if(window.renderScheduleAdmin) renderScheduleAdmin();
+      if(window.renderTickerAdmin) renderTickerAdmin();
       renderAdminQuran();
     } else {
-      buildClasses();
-      const sel = $('classSelect');
-      if (sel) { sel.value = $('loginClassSelect').value; sel.disabled = true; } // Lock class
+      const cdisp = $('classSelectDisplay');
+      if(cdisp) cdisp.innerText = S.ambClass;
       setNextDate();
       checkAmbassadorDraft();
       openOv('ambOverlay');
@@ -840,13 +855,14 @@ async function renderAdminRadios() {
     const cls = r.class || 'فصل غير محدد';
     const dt = r.date || '';
     const slLen = r.slides ? r.slides.length : 0;
-    const stat = r.status === 'pending' ? '🟡 بانتظار المراجعة' : '✅ معتمدة';
+    const isApp = r.status === 'approved';
+    const stat = !isApp ? '🟡 بانتظار المراجعة' : '✅ معتمدة';
     const rid = r.id;
     return '<div class="radio-entry">' +
       '<div><h4>' + cls + ' — ' + dt + '</h4>' +
       '<p>' + slLen + ' فقرة | ' + stat + '</p></div>' +
       '<div class="re-btns">' +
-      '<button class="btn btn-gold" onclick="approveR(\'' + rid + '\')"><i class="fas fa-check"></i> اعتماد</button>' +
+      (!isApp ? '<button class="btn btn-gold" onclick="approveR(\'' + rid + '\')"><i class="fas fa-check"></i> اعتماد</button>' : '') +
       '<button class="btn" onclick="previewAdminR(' + i + ')"><i class="fas fa-play"></i> عرض</button>' +
       '<button class="btn btn-red" onclick="deleteR(\'' + rid + '\')"><i class="fas fa-trash"></i> حذف</button>' +
       '</div>' +
@@ -899,36 +915,150 @@ window.deleteR = (id) => {
   });
 };
 
-window.saveSt = key => {
-  const ids = { topic: 'stTopic', ticker: 'stTicker', adminPw: 'stAdminPw' };
+window.saveSt = (key, btn) => {
+  const ids = { topic: 'stTopic', newsDuration: 'stNewsDuration', adminPw: 'stAdminPw' };
   const el = $(ids[key]); if (!el) return;
   const val = el.value.trim(); if (!val) return;
 
   const updates = {};
   if (key === 'adminPw') updates['pw/admin'] = val;
+  else if (key === 'newsDuration') updates['newsDuration'] = parseInt(val) || 8;
   else updates[key] = val;
 
   db.ref('settings').update(updates).then(() => {
-    alert('✅ تم الحفظ في السحابة وتحديث جميع الأجهزة');
+    if (btn) {
+      const old = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check"></i> تم الحفظ';
+      btn.classList.add('btn-success');
+      setTimeout(() => { btn.innerHTML = old; btn.classList.remove('btn-success'); }, 2000);
+    }
   });
+};
+
+window.addTickerItem = () => {
+  const el = $('newTickerInput');
+  if (!el || !el.value.trim()) return;
+  const tArr = Array.isArray(S.ticker) ? S.ticker : [S.ticker];
+  tArr.push(el.value.trim());
+  cloudSave('settings/ticker', tArr).then(() => {
+    el.value = '';
+    renderTickerAdmin();
+  });
+};
+
+window.removeTickerItem = (idx) => {
+  if (!Array.isArray(S.ticker)) return;
+  S.ticker.splice(idx, 1);
+  cloudSave('settings/ticker', S.ticker).then(() => renderTickerAdmin());
+};
+
+window.renderTickerAdmin = () => {
+  const tl = $('tickerAdminList'); if(!tl) return;
+  if (!S.ticker || S.ticker.length === 0) { tl.innerHTML='<div style="opacity:0.6; padding:10px;">لا توجد أخبار مضافة</div>'; return; }
+  tl.innerHTML = S.ticker.map((t, i) => `
+    <div class="wisdom-item">
+      <span>${t}</span>
+      <button class="btn btn-red" style="padding:5px 10px; border-radius:10px; margin-right:auto;" onclick="removeTickerItem(${i})"><i class="fas fa-times"></i></button>
+    </div>
+  `).join('');
 };
 
 function initInfoScreenLoop() {
   if(window.updateTickerUI) updateTickerUI();
   if(window.startNewsSlider) startNewsSlider();
   
-  // Participants update
+  let tickerIdx = 0;
   setInterval(() => {
-    const pb = $('participantsBoard'); if(!pb) return;
+    const tDisp = $('tickerContent');
+    const pb = $('participantsBoard');
     const approved = S.radios.find(r => r.status === 'approved');
-    if (approved && approved.slides) {
-      pb.innerHTML = approved.slides.map(s => 
-        `<div class="participant-card"><i class="fas fa-user-graduate"></i> ${s.student || 'مشارك'}</div>`
-      ).join('');
-    } else {
-      pb.innerHTML = `<div style="opacity:0.6;">بانتظار إذاعة اليوم...</div>`;
+    
+    if (pb) {
+      if (approved && approved.slides) {
+        pb.innerHTML = approved.slides.map(s => 
+          `<div class="participant-card" style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;margin-bottom:10px;animation:fadeInRight 0.5s ease-out;">
+            <i class="fas fa-user-graduate" style="color:var(--gold);"></i> 
+            <span style="font-weight:600;">${s.student || 'مشارك'}</span>
+           </div>`
+        ).join('');
+      } else {
+        pb.innerHTML = `<div style="opacity:0.5; text-align:center; padding:20px; border:1px dashed rgba(255,255,255,0.1); border-radius:15px;">بانتظار إذاعة اليوم...</div>`;
+      }
     }
-  }, 5000);
+
+    if (tDisp) {
+       let msg = '';
+       const approvedExists = approved && approved.slides && approved.slides.length > 0;
+       if (tickerIdx === 0 && approvedExists) {
+          const names = approved.slides.map(s => s.student).filter(x=>x).join(' ✦ ');
+          msg = 'المشاركين في إذاعة اليوم: ' + names;
+       } else {
+          const tArr = Array.isArray(S.ticker) ? S.ticker : ['ثانوية ابن سعدي ترحب بكم'];
+          const rIdx = (tickerIdx - (approvedExists ? 1 : 0)) % tArr.length;
+          msg = tArr[rIdx] || 'ثانوية ابن سعدي ترحب بكم';
+       }
+       tDisp.innerText = msg;
+       tickerIdx++;
+    }
+  }, 10000);
+}
+
+let newsSliderTimer;
+window.startNewsSlider = () => {
+  clearInterval(newsSliderTimer);
+  const img = $('newsImg');
+  const title = $('newsTitle');
+  const inds = $('newsIndicators');
+  if(!img || !title || !inds) return;
+  
+  if(!S.news || S.news.length === 0) {
+    img.style.display='none'; title.style.display='none'; inds.innerHTML=''; return;
+  }
+  
+  let cur = 0;
+  const showSlide = () => {
+    const n = S.news[cur];
+    if(!n) return;
+    img.style.opacity = 0;
+    setTimeout(() => {
+      img.src = n.url; img.style.display='block';
+      img.style.opacity = 1;
+    }, 300);
+
+    if(n.title) { title.innerText = n.title; title.style.display='block'; } else { title.style.display='none'; }
+    
+    inds.innerHTML = S.news.map((_, i) => `<div style="width:${i===cur ? '40px' : '15px'}; height:5px; border-radius:3px; background:${i===cur ? 'var(--gold)' : 'rgba(255,255,255,0.3)'}; transition: all 0.5s ease;"></div>`).join('');
+    
+    cur = (cur + 1) % S.news.length;
+  };
+  showSlide();
+  const dur = (S.newsDuration || 8) * 1000;
+  newsSliderTimer = setInterval(showSlide, dur);
+}
+
+window.exportScheduleExcel = () => {
+  let csv = "\ufeffاليوم,الفصل,كلمة المرور\n";
+  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  for(let i=0; i<5; i++) {
+    const s = S.schedule[i] || { class: 'غير محدد', pw: '----' };
+    csv += `${days[i]},${s.class},${s.pw}\n`;
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "جدول_الإذاعة_الأسبوعي.csv";
+  link.click();
+};
+
+function checkAutoArchive() {
+  const now = new Date();
+  S.radios.forEach(r => {
+    if (r.status === 'approved' && r.timestamp) {
+      const rDate = new Date(r.timestamp);
+      const diff = (now - rDate) / (1000 * 3600 * 24);
+      if (diff > 7) cloudRemove('radios/' + r.id);
+    }
+  });
 }
 
 // ─── ATTENDANCE ───
@@ -974,6 +1104,125 @@ function populateAttendanceTable() {
   }).join('');
 }
 
+function initFloatingIcons() {
+  const bg = $('bgCanvas'); if(!bg) return;
+  const icons = ['fa-calculator', 'fa-ruler', 'fa-pen-nib', 'fa-book', 'fa-microscope', 'fa-atom', 'fa-pi', 'fa-shapes'];
+  setInterval(() => {
+    const i = document.createElement('i');
+    const icon = icons[Math.floor(Math.random() * icons.length)];
+    i.className = `fas ${icon} edu-icon`;
+    i.style.left = Math.random() * 100 + 'vw';
+    i.style.fontSize = (Math.random() * 20 + 20) + 'px';
+    i.style.animationDuration = (Math.random() * 10 + 15) + 's';
+    bg.appendChild(i);
+    setTimeout(() => i.remove(), 25000);
+  }, 3000);
+}
+
+window.renderScheduleAdmin = () => {
+  const grid = $('scheduleGrid'); if(!grid) return;
+  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  grid.innerHTML = days.map((day, i) => {
+    const s = S.schedule[i] || { class: '1-1', pw: '' };
+    return `
+      <div style="display:flex; gap:10px; align-items:center; background:rgba(255,255,255,0.05); padding:10px; border-radius:12px;">
+        <div style="width:80px; font-weight:bold;">${day}</div>
+        <select class="input-field" style="margin:0; flex:1;" id="schClass${i}">
+          ${Array.from({length:3}, (_,r)=>Array.from({length:6}, (_,l)=> {
+            const val = (r+1)+'-'+(l+1);
+            return `<option value="${val}" ${s.class===val?'selected':''}>فصل ${val}</option>`;
+          })).flat().join('')}
+        </select>
+        <input type="text" class="input-field" style="margin:0; flex:1; -webkit-text-security: disc;" id="schPw${i}" placeholder="الرمز السري" value="${s.pw||''}">
+      </div>
+    `;
+  }).join('');
+};
+
+window.saveSchedule = (btn) => {
+  const updates = {};
+  for(let i=0; i<5; i++) {
+    updates[`schedule/${i}`] = {
+      class: $(`schClass${i}`).value,
+      pw: $(`schPw${i}`).value.trim()
+    };
+  }
+  db.ref().update(updates).then(() => {
+    if(btn) {
+      const old = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check"></i> تم حفظ الجدول';
+      setTimeout(() => btn.innerHTML = old, 2000);
+    }
+  });
+};
+
+window.renderAdminNews = () => {
+  const list = $('adminNewsList'); if(!list) return;
+  if(!S.news || S.news.length===0) { list.innerHTML='<div class="empty-st">لا توجد صور إخبارية مضافة</div>'; return; }
+  list.innerHTML = S.news.map(n => `
+    <div class="wisdom-item">
+      <img src="${n.url}" style="height:40px; width:40px; object-fit:cover; border-radius:5px; margin-left:10px;">
+      <span style="flex:1;">${n.title || 'بدون عنوان'}</span>
+      <button class="btn btn-red" onclick="deleteNews('${n.id}')"><i class="fas fa-trash"></i></button>
+    </div>
+  `).join('');
+};
+
+window.addAdminNews = () => {
+  if (typeof uploadcare === 'undefined') return;
+  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
+    file.promise().done(info => {
+      const title = prompt('عنوان الخبر (اختياري):');
+      cloudPush('news', { url: info.cdnUrl, title: title || '' });
+    });
+  });
+};
+
+window.deleteNews = (id) => {
+  if(confirm('حذف هذا الخبر؟')) cloudRemove('news/' + id);
+};
+
+window.renderAdminQuran = () => {
+  const list = $('quranListAdmin'); if(!list) return;
+  if(!S.quranVideos || S.quranVideos.length===0) { list.innerHTML='<div style="opacity:0.6; padding:10px;">لا توجد تلاوات مضافة</div>'; return; }
+  list.innerHTML = S.quranVideos.map((v, i) => `
+    <div class="wisdom-item">
+      <span>${v.label}</span>
+      <button class="btn btn-red" onclick="deleteQuranVideo(${i})"><i class="fas fa-trash"></i></button>
+    </div>
+  `).join('');
+  
+  const userList = $('quranListUser');
+  if(userList) {
+    userList.innerHTML = S.quranVideos.map(v => `
+      <div class="quran-item" onclick="playVideo('${v.url}')">
+        <i class="fas fa-play-circle"></i> <span>${v.label}</span>
+      </div>
+    `).join('');
+  }
+};
+
+window.addQuranVideoEntry = () => {
+  if (typeof uploadcare === 'undefined') return;
+  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
+    file.promise().done(info => {
+      const label = prompt('اسم القارئ أو السورة:');
+      if(!label) return;
+      const newList = [...(S.quranVideos || [])];
+      newList.push({ url: info.cdnUrl, label });
+      cloudSave('quranVideos', newList);
+    });
+  });
+};
+
+window.deleteQuranVideo = (idx) => {
+  if(confirm('حذف هذه التلاوة؟')) {
+    const newList = [...(S.quranVideos || [])];
+    newList.splice(idx, 1);
+    cloudSave('quranVideos', newList);
+  }
+};
+
 window.toggleRowText = (id) => {
   const el = $(id);
   if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
@@ -982,12 +1231,12 @@ window.toggleRowText = (id) => {
 window.editR = (id) => {
   const r = S.radios.find(x => x.id.toString() === id.toString());
   if (!r) return;
-  S.role = 'amb'; // Reuse ambassador UI
-  buildClasses();
+  S.role = 'amb'; 
   setNextDate();
   
   editDraftId = r.id;
-  $('classSelect').value = r.class;
+  const cdisp = $('classSelectDisplay');
+  if(cdisp) cdisp.innerText = r.class;
   $('nextDay').innerText = r.date;
   
   const ed = $('slidesEditor');
@@ -1007,17 +1256,19 @@ window.updateAttend = (student, status) => {
 };
 
 window.exportExcel = () => {
-  if (!S.currentRadioId || !S.attendance[S.currentRadioId]) {
+  if (!S.currentRadioId || !S.attendance) {
     alert("لا توجد بيانات للتصدير"); return;
   }
-  const data = S.attendance[S.currentRadioId];
-  const rows = [["الفصل", "التاريخ", "الطالب", "الفقرة", "الحالة"]];
-  Object.entries(data).forEach(([s, i]) => rows.push([i.class, i.date, s, i.slide, i.status]));
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "الحضور");
-  XLSX.writeFile(wb, "attendance_report.xlsx");
+  let csv = "\ufeffالفصل,التاريخ,الطالب,الفقرة,الحالة\n";
+  const data = Array.isArray(S.attendance) ? S.attendance.filter(a => a.radioId === S.currentRadioId) : [];
+  data.forEach(i => {
+    csv += `${i.class},${i.date},${i.student},${i.slide},${i.status}\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `تقرير_حضور_${S.currentRadioId}.csv`;
+  link.click();
 };
 
 window.deleteAttendanceRecord = () => {
@@ -1035,3 +1286,26 @@ window.deleteAttendanceRecord = () => {
     alert('تم مسح سجل الحضور لهذه الإذاعة.');
   });
 };
+
+function renderAdminContent() {
+  const up = $('anthemUploadBtn');
+  if(up) up.style.display = S.anthemUrl ? 'none' : 'block';
+  const del = $('anthemDeleteBtn');
+  if(del) del.style.display = S.anthemUrl ? 'block' : 'none';
+}
+
+window.uploadAnthemVideo = () => {
+  if (typeof uploadcare === 'undefined') return;
+  uploadcare.openDialog(null, { publicKey: 'f1118bb7ce070c9d80d1', tabs: 'file url camera', locale: 'ar' }).done(file => {
+    file.promise().done(info => {
+      cloudUpdate('settings', { anthemUrl: info.cdnUrl }).then(() => alert('تم رفع النشيد وتحديثه!'));
+    });
+  });
+};
+
+window.deleteAnthemVideo = () => {
+  if(confirm('حذف النشيد الوطني الحالي؟')) {
+    cloudUpdate('settings', { anthemUrl: null }).then(() => alert('تم الحذف.'));
+  }
+};
+

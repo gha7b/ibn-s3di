@@ -17,12 +17,32 @@
 }
 
 body.light {
-  --bg: #e0f2f1;
-  --bg2: #b2dfdb;
-  --glass: rgba(0, 0, 0, 0.05);
-  --gb: rgba(0, 0, 0, 0.1);
-  --text: #1a3a37;
-  --white: #1a3a37;
+  --bg: #f5fdfc;
+  --bg2: #ffffff;
+  --glass: rgba(0, 0, 0, 0.04);
+  --gb: rgba(0, 0, 0, 0.08);
+  --text: #0b312b;
+  --white: #0b312b;
+  --card: #ffffff;
+  --accent: #0e8d77;
+}
+
+body.light .modal,
+body.light .scard {
+  background: #ffffff;
+  color: #0b312b;
+  border: 1px solid rgba(0,0,0,0.1);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+}
+
+body.light .input-field {
+  background: #f0f4f4;
+  color: #0b312b;
+  border-color: #d0dedd;
+}
+
+body.light .x-btn {
+  color: #0b312b;
 }
 
 body.light .main-clock {
@@ -116,7 +136,7 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 18px 50px;
+  padding: 12px 50px;
   background: var(--glass);
   backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--gb);
@@ -127,7 +147,7 @@ header {
 }
 
 .logo {
-  height: 80px;
+  height: 65px;
   object-fit: contain;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
   transition: 0.3s;
@@ -143,13 +163,13 @@ header {
 }
 
 .main-clock {
-  font-size: 6.5rem;
+  font-size: 5rem;
   font-weight: 900;
   color: var(--white);
   text-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
 }
 
 .school-name {

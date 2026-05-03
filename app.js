@@ -11,7 +11,7 @@ const firebaseConfig = {
     storageBucket: "abns3di.firebasestorage.app",
     messagingSenderId: "123165243179",
     appId: "1:123165243179:web:96e8105747f5cc24285437",
-    databaseURL: "https://abns3di-default-rtdb.firebaseio.com/"
+    databaseURL: "https://abns3di-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
 // Initialize Firebase Safely

@@ -25,6 +25,26 @@ body.light {
   --white: #0b312b;
   --card: #ffffff;
   --accent: #0e8d77;
+  --gold: #0e8d77;
+}
+
+body.light .edu-icon {
+  color: var(--accent) !important;
+  opacity: 0.4;
+}
+
+body.light .footer-credit {
+  color: var(--accent) !important;
+}
+
+body.light #infoClock, body.light #infoDate2, body.light #infoTopic2, body.light #tickerContent {
+  color: #0b312b !important;
+  text-shadow: none !important;
+}
+
+body.light .btn-accent {
+  background: var(--accent);
+  color: #fff;
 }
 
 body.light .modal,
@@ -578,6 +598,11 @@ body.light #bgCanvas {
   100% {
     transform: translateX(100%)
   }
+}
+
+@keyframes tickerScroll {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100vw); }
 }
 
 /* GALLERY */
@@ -1620,4 +1645,97 @@ body.light .dock-btn {
 @keyframes clickAnim {
   0% { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
   100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+.edu-icon {
+  position: absolute;
+  color: rgba(255,255,255,0.06);
+  z-index: -1;
+  animation: floatUp 20s linear infinite;
+  pointer-events: none;
+}
+body.light .edu-icon { color: rgba(0,0,0,0.03); }
+@keyframes floatUp {
+  0% { transform: translateY(110vh) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-10vh) rotate(360deg); opacity: 0; }
+}
+.news-img { transition: opacity 0.5s ease; }
+.participant-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 15px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px; margin-bottom: 8px;
+  font-weight: 600;
+}
+.btn-success { background: var(--accent) !important; }
+@keyframes tickerScroll {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
+
+/* LIGHT MODE REFINEMENTS */
+body.light .overlay {
+  background: rgba(245, 253, 252, 0.95) !important;
+}
+body.light #infoOverlay {
+  background: rgba(245, 253, 252, 0.98) !important;
+}
+body.light #infoOverlay > div {
+  background: #f5fdfc !important;
+  color: #0b312b !important;
+}
+body.light #infoOverlay div[style*="border-left"] {
+  border-left: 1px solid rgba(0,0,0,0.1) !important;
+  background: rgba(0,0,0,0.03) !important;
+}
+body.light #infoClock, body.light #infoDate2 {
+  color: #0b312b !important;
+  text-shadow: none !important;
+}
+body.light #infoTopic2 {
+  color: #0e8d77 !important;
+}
+body.light .participant-card {
+  background: #fff !important;
+  border-color: rgba(0,0,0,0.1) !important;
+  color: #0b312b !important;
+}
+body.light .pres-modal {
+  background: #fff !important;
+  color: #0b312b !important;
+}
+body.light .ps-title, body.light .ps-student, body.light .ps-text {
+  color: #0b312b !important;
+}
+body.light .pres-bar {
+  background: #f0f4f4 !important;
+  border-top: 1px solid rgba(0,0,0,0.1) !important;
+}
+body.light .nav-btn {
+  color: #0b312b !important;
+}
+body.light .nav-btn:hover {
+  background: rgba(0,0,0,0.05) !important;
+}
+body.light .radio-entry, body.light .wisdom-item {
+  background: #f9fbfb !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+  color: #0b312b !important;
+}
+body.light .radio-entry h4, body.light .wisdom-item span {
+  color: #0b312b !important;
+}
+body.light .tabs {
+  border-bottom-color: rgba(0,0,0,0.1) !important;
+}
+body.light .tab-btn {
+  color: #555 !important;
+}
+body.light .tab-btn.active {
+  color: var(--accent) !important;
+}
+body.light #videoOverlay {
+  background: rgba(0,0,0,0.95) !important; /* Keep video player dark for focus */
 }

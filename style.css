@@ -605,6 +605,40 @@ body.light #bgCanvas {
   100% { transform: translateX(100vw); }
 }
 
+/* Developer Credit */
+.dev-credit {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  color: var(--accent);
+  opacity: 0.75;
+  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  z-index: 10;
+}
+.light .dev-credit { color: #0a6b4a; opacity: 1; }
+
+.participant-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 15px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: 0.3s;
+  width: 100%;
+}
+.participant-card i { font-size: 1.1rem; }
+.participant-card span { font-weight: 600; font-size: 0.95rem; }
+.participant-card:hover { background: rgba(255, 255, 255, 0.1); transform: translateX(-5px); }
+
+
+
 /* GALLERY */
 .gallery-toolbar {
   display: flex;
@@ -1483,6 +1517,7 @@ select.input-field option {
     overflow-x: auto;
   }
 }
+
 
 @media(max-width:480px) {
   .main-clock {

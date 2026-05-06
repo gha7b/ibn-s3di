@@ -19,9 +19,11 @@ const S={
   topic:'أهلاً بكم في ثانوية ابن سعدي',
   anthemUrl:'',quranVideos:[],
   pw:{admin:'Admin000'},schedule:{},
-  news:[],ticker:['ثانوية ابن سعدي ترحب بكم'],
+  news:[],ticker:[],
   newsDuration:8,ambClass:'',currentRadioId:null
 };
+
+var S_bp = { list:[], bcastIdx:0, segIdx:0, segTimer:null, editId:null, editSegs:[] };
 
 const cloudSave=(p,d)=>db.ref(p).set(d);
 const cloudPush=(p,d)=>db.ref(p).push(d);
@@ -37,30 +39,38 @@ function initCloudSync(){
     if(d.anthemUrl!==undefined)S.anthemUrl=d.anthemUrl;
     if(d.pw)S.pw=d.pw;
     S.ticker = d.ticker ? (Array.isArray(d.ticker)?d.ticker:[d.ticker]) : [];
-    if(d.newsDuration)S.newsDuration=d.newsDuration;
+    if(d.newsDuration && d.newsDuration !== S.newsDuration){
+      S.newsDuration=d.newsDuration;
+      var durEl=document.getElementById('stNewsDuration');
+      if(durEl)durEl.value=d.newsDuration;
+      startNewsSlider();
+    }
     updateAnthemUI();
   });
   db.ref('radios').on('value',s=>{
     S.radios=objArr(s.val()).sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
-    renderAdminRadios();
-    populateAttendanceRadios();
-  });
-  db.ref('schedule').on('value',s=>{S.schedule=s.val()||{};renderScheduleAdmin();});
-  db.ref('news').on('value',s=>{
-    S.news=objArr(s.val());
-    renderAdminNews();
-    startNewsSlider();
+    var adm=document.getElementById('adminOverlay');
+    if(adm && adm.classList.contains('open')){
+      renderAdminRadios();
+      populateAttendanceRadios();
+    }
   });
   db.ref('attendance').on('value',s=>{
     S.attendance=objArr(s.val());
-    populateAttendanceTable();
+    var adm=document.getElementById('adminOverlay');
+    if(adm && adm.classList.contains('open')){
+      populateAttendanceTable();
+    }
     populateAttendanceRadios();
   });
-  db.ref('quranVideos').on('value',s=>{
-    const v=s.val();
-    S.quranVideos=v?Array.isArray(v)?v:Object.values(v):[];
-    renderAdminQuran();
+  db.ref('news').on('value',s=>{
+    S.news=objArr(s.val());
+    startNewsSlider();
+    var adm=document.getElementById('adminOverlay');
+    if(adm && adm.classList.contains('open')) renderAdminNews();
   });
+  // Lazy loads for the rest
+  db.ref('schedule').on('value',s=>{S.schedule=s.val()||{};});
   db.ref('classPasswords').on('value',s=>{S.classPasswords=s.val()||{};});
 }
 
@@ -93,11 +103,9 @@ function initClock(){
   tick();setInterval(tick,1000);
 }
 
-function beep(f=520,d=0.25,v=null){
-  try{const c=new(window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator();const g=c.createGain();o.frequency.value=f;g.gain.value=(v??S.bellVol)*0.15;o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}
-}
-function bellSound(){beep(520,0.4);setTimeout(()=>beep(650,0.4),250);}
-function clickSound(){beep(700,0.08,0.3);}
+function beep(){}
+function bellSound(){}
+function clickSound(){}
 
 window.openOv=id=>{const e=$(id);if(e){e.classList.add('open');clickSound();}};
 window.closeOv=id=>{const e=$(id);if(e){e.classList.remove('open');clickSound();}};
@@ -115,7 +123,7 @@ window.toggleVideoFullscreen=()=>{
 
 function bindAll(){
   on('radioCard',startRadio);
-  on('quranCard',openQuranSelector);
+  on('quranCard', openDailyQuran);
   on('anthemCard',playAnthem);
   on('infoTrigger',()=>openOv('infoOverlay'));
   on('adminBtn',()=>{S.role='admin';openLogin();});
@@ -143,15 +151,22 @@ window.showTab=(tabId,btn)=>{
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   const t=$(tabId);if(t)t.classList.add('active');
   if(btn)btn.classList.add('active');
+  if(tabId==='tabBackup') loadBackupBroadcasts(renderBackupAdmin);
   clickSound();
 };
+
+function loadBackupBroadcasts(cb){
+  db.ref('backupBroadcasts').once('value', function(s){
+    S_bp.list = objArr(s.val());
+    if(cb) cb();
+  });
+}
 
 // === LOGIN ===
 function openLogin(){var isA=S.role==='admin';var icon=document.getElementById('loginIcon');if(icon)icon.innerHTML=isA?'<i class="fas fa-gear"></i>':'<i class="fas fa-user-tie"></i>';var title=document.getElementById('loginTitle');if(title)title.innerText=isA?'دخول الإدارة':'دخول السفير';var pw=document.getElementById('loginPass');if(pw)pw.value='';var err=document.getElementById('loginError');if(err)err.style.display='none';openOv('loginOverlay');}
 window.validateLogin=function(){var pwEl=document.getElementById('loginPass');if(!pwEl)return;var val=pwEl.value.trim();var err=document.getElementById('loginError');if(err)err.style.display='none';if(val==='IbnSaadi@2025#'){if(S.role==='admin'){successLogin();return;}S.ambClass=(S.schedule[0]&&S.schedule[0].class)?S.schedule[0].class:'1-1';successLogin();return;}if(S.role==='admin'){if(S.pw&&val===S.pw.admin)successLogin();else{if(err){err.innerText='الرمز خاطئ!';err.style.display='block';}beep(200,0.3,0.5);}}else{var found=null,dayIdx=-1;for(var i=0;i<5;i++){var sch=S.schedule[i];if(!sch)continue;var cpw=(S.classPasswords&&S.classPasswords[sch.class])?S.classPasswords[sch.class]:(sch.pw||'');if(cpw&&cpw===val){found=sch;dayIdx=i;break;}}if(!found){if(err){err.innerText='الرمز السري خاطئ!';err.style.display='block';}beep(200,0.3,0.5);return;}var today=new Date().getDay();if(today>4){if(err){err.innerText='لا إذاعة في العطلة!';err.style.display='block';}return;}if(today!==dayIdx){var daysAr=['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس'];if(err){err.innerText='يوم فصلك هو '+daysAr[dayIdx]+', مو اليوم!';err.style.display='block';}return;}S.ambClass=found.class;successLogin();}};
 function successLogin(){
   closeOv('loginOverlay');
-  bellSound();
   if(S.role==='admin'){
     openOv('adminOverlay');
     renderAdminRadios();
@@ -159,6 +174,7 @@ function successLogin(){
     renderScheduleAdmin();
     renderAdminQuran();
     renderTickerAdmin();
+    loadBackupBroadcasts(renderBackupAdmin);
   } else {
     var cd = document.getElementById('classSelectDisplay');
     if(cd) cd.innerText = S.ambClass;
@@ -187,6 +203,25 @@ window.closeVideo=function(){
   if(document.fullscreenElement)document.exitFullscreen().catch(function(){});
   closeOv('videoOverlay');
 };
+// Daily auto-rotating Quran video
+function openDailyQuran(){
+  if(S.quranVideos && S.quranVideos.length){
+    _playDailyQuran();
+  } else {
+    db.ref('quranVideos').once('value',function(s){
+      var v=s.val();
+      S.quranVideos=v?(Array.isArray(v)?v:Object.values(v)):[];
+      _playDailyQuran();
+    });
+  }
+}
+function _playDailyQuran(){
+  if(!S.quranVideos||!S.quranVideos.length){alert('لا توجد تلاوات مضافة');return;}
+  var dayIdx=Math.floor(Date.now()/86400000)%S.quranVideos.length;
+  var vid=S.quranVideos[dayIdx];
+  if(vid&&vid.url)playVideo(vid.url);
+  else alert('لا يوجد فيديو لهذا اليوم');
+}
 function openQuranSelector(){
   var list=document.getElementById('quranListUser');
   if(!list)return;
@@ -273,7 +308,7 @@ function updateSlideNumbers(){document.querySelectorAll('.slide-entry').forEach(
 window.submitRadio=function(){var entries=document.querySelectorAll('.slide-entry');if(!entries.length){alert('أضف فقرة واحدة على الأقل!');return;}var slides=[];entries.forEach(function(e){var student=e.querySelector('.s-student');var title=e.querySelector('.s-title');var text=e.querySelector('.s-text');var file=e.querySelector('.s-file');var ft=file?file.dataset.type||'':'';slides.push({student:student?student.value.trim():'',title:title?title.value.trim():'',content:text?text.value.trim():'',fileUrl:file?file.value:'',fileType:ft});});var radioId=editDraftId||Date.now().toString();var data={class:S.ambClass,date:new Date().toLocaleDateString('ar-SA',{weekday:'long',day:'numeric',month:'long',year:'numeric'}),status:'pending',slides:slides,timestamp:Date.now()};cloudUpdate('radios/'+radioId,data).then(function(){var btn=document.getElementById('ambSubmitBtnTxt');if(btn)btn.innerText='✅ تم الإرسال';setTimeout(function(){if(btn)btn.innerText='إرسال الإذاعة للإدارة';},3000);editDraftId=radioId;});};
 
 // === ADMIN ===
-function renderAdminRadios(){var list=document.getElementById('adminRadioList');if(!list)return;if(!S.radios.length){list.innerHTML='<div class="empty-st"><i class="fas fa-inbox"></i><p>لا توجد إذاعات بعد</p></div>';populateAttendanceRadios();return;}list.innerHTML=S.radios.map(function(r,i){var isApp=r.status==='approved';return '<div class="radio-entry"><div><h4>'+(r.class||'?')+' — '+(r.date||'')+'</h4><p>'+(r.slides?r.slides.length:0)+' فقرة | '+(isApp?'✅ معتمدة':'🟡 بانتظار المراجعة')+'</p></div><div class="re-btns">'+(isApp?'':'<button class="btn btn-gold" onclick="approveR(\''+r.id+'\')"><i class="fas fa-check"></i> اعتماد</button><button class="btn btn-accent" onclick="adminEditR(\''+r.id+'\')"><i class="fas fa-edit"></i> تعديل</button>')+'<button class="btn" onclick="previewAdminR('+i+')"><i class="fas fa-play"></i> عرض</button><button class="btn btn-red" onclick="deleteR(\''+r.id+'\')"><i class="fas fa-trash"></i> حذف</button></div></div>';}).join('');populateAttendanceRadios();}
+function renderAdminRadios(){var list=document.getElementById('adminRadioList');if(!list)return;if(!S.radios.length){list.innerHTML='<div class="empty-st"><i class="fas fa-inbox"></i><p>لا توجد إذاعات بعد</p></div>';populateAttendanceRadios();return;}list.innerHTML=S.radios.map(function(r,i){var isApp=r.status==='approved';return '<div class="radio-entry"><div><h4>'+(r.class||'?')+' — '+(r.date||'')+'</h4><p>'+(r.slides?r.slides.length:0)+' فقرة | '+(isApp?'✅ معتمدة':'🟡 بانتظار المراجعة')+'</p></div><div class="re-btns">'+(isApp?'':'<button class="btn btn-gold" onclick="approveR(\''+r.id+'\')"><i class="fas fa-check"></i> اعتماد</button>')+'<button class="btn btn-accent" onclick="adminEditR(\''+r.id+'\')"><i class="fas fa-edit"></i> تعديل</button><button class="btn" onclick="previewAdminR('+i+')"><i class="fas fa-play"></i> عرض</button><button class="btn btn-red" onclick="deleteR(\''+r.id+'\')"><i class="fas fa-trash"></i> حذف</button></div></div>';}).join('');populateAttendanceRadios();}
 window.approveR=function(id){var r=S.radios.find(function(x){return x.id===id;});if(!r)return;var updates={};S.radios.forEach(function(x){if(x.status==='approved')updates['radios/'+x.id+'/status']='pending';});updates['radios/'+id+'/status']='approved';if(r.slides)r.slides.forEach(function(sl){var attId=id+'_'+sl.student.replace(/\s+/g,'_');updates['attendance/'+attId]={student:sl.student,slide:sl.title,status:'حاضر',class:r.class,date:r.date,radioId:id};});db.ref().update(updates).then(function(){alert('✅ تم اعتماد الإذاعة!');});};
 window.deleteR=function(id){if(confirm('حذف هذه الإذاعة نهائياً؟'))cloudRemove('radios/'+id);};
 window.previewAdminR=function(i){var r=S.radios[i];if(r&&r.slides){S.slides=r.slides;S.idx=0;openOv('presOverlay');renderPresSlide();}};
@@ -356,6 +391,38 @@ window.deleteAttendanceRecord=function(){if(!S.currentRadioId){alert('اختر �
 var newsSliderTimer=null;
 var tickerAnimId=null;
 var _lastTickerText='';
+var participantsAnimId=null;
+
+function startParticipantsScroll(html){
+  var board=document.getElementById('participantsBoard');
+  var area=document.getElementById('participantsScrollArea');
+  if(!board||!area)return;
+  if(participantsAnimId){cancelAnimationFrame(participantsAnimId);participantsAnimId=null;}
+  
+  // Set content once
+  board.innerHTML = html;
+  var areaH=area.offsetHeight;
+  var boardH=board.scrollHeight;
+  
+  if(boardH <= areaH){
+    board.style.transform='translateY(0)';
+    return;
+  }
+  
+  // Clone for seamless loop ONLY if scrolling is needed
+  board.innerHTML = html + html;
+  var fullH = boardH; // The height of the original list
+  var y=0;
+  var speed=0.45; // Very slow and smooth
+  
+  function step(){
+    y -= speed;
+    if(Math.abs(y) >= fullH) y=0;
+    board.style.transform='translateY('+y+'px)';
+    participantsAnimId=requestAnimationFrame(step);
+  }
+  step();
+}
 
 function startTickerRAF(){
   var tDisp=document.getElementById('tickerContent');
@@ -394,27 +461,38 @@ function initInfoLoop(){
     var topicEl = document.getElementById('infoTopic2');
     if(topicEl) topicEl.innerText = S.topic || 'جاري التحميل...';
     
-    var pb = document.getElementById('participantsBoard');
-    var approved = S.radios.find(function(r){return r.status==='approved';});
-    if(pb){
-      if(approved && approved.slides && approved.slides.length){
-        pb.innerHTML = approved.slides.map(function(s){
-          return '<div class="participant-card"><i class="fas fa-user-graduate" style="color:var(--gold)"></i> <span>'+(s.student||'مشارك')+'</span></div>';
-        }).join('');
+    var pb2 = document.getElementById('participantsBoard');
+    var approvedR = S.radios.find(function(r){return r.status==='approved';});
+    if(pb2){
+      if(approvedR && approvedR.slides && approvedR.slides.length){
+        var presentStudents = approvedR.slides.filter(function(s){
+          if(!s.student) return false;
+          var att = S.attendance.find(function(a){return a.radioId===approvedR.id && a.student===s.student;});
+          return !att || att.status==='حاضر';
+        });
+        var html = presentStudents.length ?
+          presentStudents.map(function(s){return '<div class="participant-card"><i class="fas fa-user-graduate" style="color:var(--gold)"></i> <span>'+(s.student||'مشارك')+'</span></div>';}).join('') :
+          '<div style="opacity:0.5;text-align:center;padding:20px;">بانتظار إذاعة اليوم...</div>';
+          
+        if(pb2.dataset.lastHtml !== html){
+          pb2.dataset.lastHtml = html;
+          startParticipantsScroll(html);
+        }
       } else {
-        pb.innerHTML = '<div style="opacity:0.5;text-align:center;padding:20px;">بانتظار إذاعة اليوم...</div>';
+        var emptyHtml = '<div style="opacity:0.5;text-align:center;padding:20px;">بانتظار إذاعة اليوم...</div>';
+        if(pb2.dataset.lastHtml !== emptyHtml){
+          pb2.dataset.lastHtml = emptyHtml;
+          pb2.innerHTML = emptyHtml;
+          if(participantsAnimId){cancelAnimationFrame(participantsAnimId);participantsAnimId=null;}
+          pb2.style.transform='translateY(0)';
+        }
       }
     }
 
-    // 2. Ticker (rAF-based, LTR, only restarts on content change)
+    // 2. Ticker - no students, only ticker items
     var tDisp2=document.getElementById('tickerContent');
     var tCont2=document.getElementById('tickerContainer');
     var tickerItems=(S.ticker&&Array.isArray(S.ticker))?S.ticker.slice():[];
-    var approvedT=S.radios.find(function(r){return r.status==='approved';});
-    if(approvedT&&approvedT.slides){
-      var sts=approvedT.slides.map(function(s){return s.student;}).filter(function(x){return x;}).join(' ✦ ');
-      if(sts)tickerItems.unshift('المشاركون في إذاعة اليوم: '+sts);
-    }
     var sep='\u00A0'.repeat(25);
     var newTickerHTML=tickerItems.join(sep)+(tickerItems.length?sep:'');
     if(tCont2)tCont2.style.display='flex';
@@ -461,9 +539,12 @@ window.startNewsSlider=function(){
     if(pb){
       pb.style.transition = 'none';
       pb.style.width = '0%';
-      pb.offsetHeight;
-      pb.style.transition = 'width ' + (S.newsDuration || 8) + 's linear';
-      pb.style.width = '100%';
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){
+          pb.style.transition = 'width ' + (S.newsDuration||8) + 's linear';
+          pb.style.width = '100%';
+        });
+      });
     }
     cur=(cur+1)%S.news.length;
   }
@@ -498,3 +579,133 @@ function checkAutoArchive(){
 
 // === UPDATE topic in banner ===
 window.updateTopicUI=updateTopicUI;
+
+// ══════════════════════════════════════════════
+// ===== BACKUP BROADCASTS (الإذاعة الاحتياطية) =====
+// ══════════════════════════════════════════════
+var S_bp={list:[],segIdx:0,bcastIdx:0,segTimer:null,editId:null,editSegs:[]};
+
+// Load from Firebase (lazy)
+function loadBackupBroadcasts(cb){
+  db.ref('backupBroadcasts').once('value',function(s){
+    S_bp.list=objArr(s.val());
+    if(cb)cb();
+  });
+}
+
+// Admin render
+function renderBackupAdmin(){
+  var el=document.getElementById('backupAdminList');if(!el)return;
+  if(!S_bp.list.length){el.innerHTML='<div style="opacity:0.6;padding:10px;">لا توجد إذاعات احتياطية.</div>';return;}
+  el.innerHTML=S_bp.list.map(function(b,i){
+    var dayNum=Math.floor(Date.now()/86400000);
+    var todayIdx=dayNum%S_bp.list.length;
+    var isTodayBadge=(i===todayIdx)?'<span style="background:var(--accent);color:#fff;padding:2px 8px;border-radius:20px;font-size:0.75rem;margin-right:8px;">اليوم</span>':'';
+    return '<div class="wisdom-item"><span style="flex:1;">'+isTodayBadge+(b.name||'إذاعة '+(i+1))+' ('+((b.segments&&b.segments.length)||0)+' فقرة)</span>'+
+      '<button class="btn btn-accent" style="padding:5px 10px;" onclick="openEditBackup(\''+b.id+'\')"><i class="fas fa-edit"></i></button>'+
+      '<button class="btn btn-red" style="padding:5px 10px;" onclick="deleteBackup(\''+b.id+'\')"><i class="fas fa-trash"></i></button></div>';
+  }).join('');
+}
+
+window.openAddBackup=function(){
+  S_bp.editId=null;S_bp.editSegs=[];
+  var ni=document.getElementById('backupNameInput');if(ni)ni.value='';
+  renderEditSegs();
+  openOv('backupEditOverlay');
+};
+window.openEditBackup=function(id){
+  var b=S_bp.list.find(function(x){return x.id===id;});if(!b)return;
+  S_bp.editId=id;S_bp.editSegs=(b.segments||[]).map(function(s){return Object.assign({},s);});
+  var ni=document.getElementById('backupNameInput');if(ni)ni.value=b.name||'';
+  renderEditSegs();
+  openOv('backupEditOverlay');
+};
+window.deleteBackup=function(id){
+  if(confirm('حذف هذه الإذاعة الاحتياطية؟'))
+    cloudRemove('backupBroadcasts/'+id).then(function(){loadBackupBroadcasts(renderBackupAdmin);});
+};
+window.addBpSeg=function(){
+  S_bp.editSegs.push({title:'',videoUrl:''});renderEditSegs();
+};
+window.removeBpSeg=function(i){
+  S_bp.editSegs.splice(i,1);renderEditSegs();
+};
+window.uploadBpVideo=function(i){
+  if(typeof uploadcare==='undefined'){alert('Uploadcare غير محمل');return;}
+  uploadcare.openDialog(null,{publicKey:'f1118bb7ce070c9d80d1',tabs:'file url camera',locale:'ar'})
+    .done(function(file){file.promise().done(function(info){
+      S_bp.editSegs[i].videoUrl=info.cdnUrl;renderEditSegs();
+    });});
+};
+function renderEditSegs(){
+  var el=document.getElementById('backupSegsList');if(!el)return;
+  if(!S_bp.editSegs.length){el.innerHTML='<div style="opacity:0.6;padding:10px;text-align:center;">لا توجد فقرات. اضغط "+ فقرة جديدة"</div>';return;}
+  el.innerHTML=S_bp.editSegs.map(function(seg,i){
+    return '<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;margin-bottom:10px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+
+      '<b style="color:var(--gold);">فقرة '+(i+1)+'</b>'+
+      '<button class="btn btn-red" style="padding:4px 10px;" onclick="removeBpSeg('+i+')"><i class="fas fa-trash"></i></button></div>'+
+      '<input class="input-field" placeholder="عنوان الفقرة" value="'+(seg.title||'')+'" oninput="S_bp.editSegs['+i+'].title=this.value" style="margin-bottom:8px;">'+
+      (seg.videoUrl?
+        '<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--gold);">✅ فيديو مرفق</span><button class="btn btn-accent" style="padding:5px 10px;" onclick="uploadBpVideo('+i+')">تغيير</button></div>':
+        '<button class="btn btn-accent" onclick="uploadBpVideo('+i+')"><i class="fas fa-upload"></i> رفع فيديو</button>')+
+      '</div>';
+  }).join('');
+}
+window.saveBackupBroadcast=function(btn){
+  var name=(document.getElementById('backupNameInput')||{}).value||'';name=name.trim();
+  if(!name){alert('أدخل اسم الإذاعة');return;}
+  if(!S_bp.editSegs.length){alert('أضف فقرة واحدة على الأقل');return;}
+  var data={name:name,segments:S_bp.editSegs};
+  var p=S_bp.editId?cloudUpdate('backupBroadcasts/'+S_bp.editId,data):cloudPush('backupBroadcasts',data);
+  p.then(function(){
+    closeOv('backupEditOverlay');
+    loadBackupBroadcasts(renderBackupAdmin);
+    if(btn){var old=btn.innerHTML;btn.innerHTML='✅ تم الحفظ';setTimeout(function(){btn.innerHTML=old;},2000);}
+  });
+};
+
+// ---- Playback ----
+window.startBackupBroadcast=function(){
+  loadBackupBroadcasts(function(){
+    if(!S_bp.list.length){alert('لا توجد إذاعات احتياطية مضافة بعد');return;}
+    var dayNum=Math.floor(Date.now()/86400000);
+    S_bp.bcastIdx=dayNum%S_bp.list.length;
+    S_bp.segIdx=0;
+    if(S_bp.segTimer){clearTimeout(S_bp.segTimer);S_bp.segTimer=null;}
+    _playBpSegment();
+  });
+};
+function _playBpSegment(){
+  var bc=S_bp.list[S_bp.bcastIdx];
+  if(!bc||!bc.segments||!bc.segments.length)return;
+  var seg=bc.segments[S_bp.segIdx%bc.segments.length];
+  // Show in presContent
+  var c=document.getElementById('presContent');
+  if(c){
+    c.innerHTML='<div style="text-align:center;padding:30px 20px;">'+
+      '<div style="font-size:0.85rem;color:var(--accent);margin-bottom:8px;letter-spacing:1px;">📡 إذاعة احتياطية — '+(bc.name||'')+' ('+
+      (S_bp.segIdx%bc.segments.length+1)+'/'+bc.segments.length+')</div>'+
+      '<div class="ps-title" style="margin-bottom:20px;">'+(seg.title||'')+'</div>'+
+      (seg.videoUrl?
+        '<div onclick="playVideo(\''+seg.videoUrl+'\')" style="cursor:pointer;background:#111;border-radius:16px;padding:40px 60px;display:inline-block;border:2px solid var(--gold);transition:0.3s;" onmouseover="this.style.background=\'#222\'" onmouseout="this.style.background=\'#111\'">'+
+        '<i class="fas fa-play-circle" style="font-size:5rem;color:var(--gold);display:block;margin-bottom:12px;"></i>'+
+        '<div style="color:var(--gold);font-weight:700;font-size:1.1rem;">تشغيل الفيديو</div></div>':''+
+        '<div style="color:rgba(255,255,255,0.4);margin-top:30px;">لا يوجد فيديو لهذه الفقرة</div>')+
+      '</div>';
+  }
+  // play video & advance on end
+  if(seg.videoUrl){
+    playVideo(seg.videoUrl);
+    var mv=document.getElementById('mainVideo');
+    if(mv){mv.onended=function(){closeVideo();_advanceBpSegment();};}
+  } else {
+    S_bp.segTimer=setTimeout(_advanceBpSegment,5000);
+  }
+}
+function _advanceBpSegment(){
+  var bc=S_bp.list[S_bp.bcastIdx];if(!bc||!bc.segments)return;
+  S_bp.segIdx=(S_bp.segIdx+1)%bc.segments.length;
+  S_bp.segTimer=setTimeout(_playBpSegment,3000);
+}
+

@@ -1,34 +1,35 @@
 /**
  * Offline Support using IndexedDB
- * Handled by Agent 9 (QA Tester)
  */
 
 const DB_NAME = 'SchoolRadioDB';
 const DB_VERSION = 1;
-let db;
+let offlineDb = null;
 
 const request = indexedDB.open(DB_NAME, DB_VERSION);
 
 request.onupgradeneeded = (event) => {
-    db = event.target.result;
-    if (!db.objectStoreNames.contains('radioData')) {
-        db.createObjectStore('radioData', { keyPath: 'id' });
+    offlineDb = event.target.result;
+    if (!offlineDb.objectStoreNames.contains('radioData')) {
+        offlineDb.createObjectStore('radioData', { keyPath: 'id' });
     }
 };
 
 request.onsuccess = (event) => {
-    db = event.target.result;
+    offlineDb = event.target.result;
     console.log("IndexedDB Initialized");
 };
 
 function saveRadioOffline(id, data) {
-    const transaction = db.transaction(['radioData'], 'readwrite');
+    if (!offlineDb) return;
+    const transaction = offlineDb.transaction(['radioData'], 'readwrite');
     const store = transaction.objectStore('radioData');
     store.put({ id: id, data: data, timestamp: Date.now() });
 }
 
 function getRadioOffline(id, callback) {
-    const transaction = db.transaction(['radioData'], 'readonly');
+    if (!offlineDb) { if (callback) callback(null); return; }
+    const transaction = offlineDb.transaction(['radioData'], 'readonly');
     const store = transaction.objectStore('radioData');
     const request = store.get(id);
     request.onsuccess = () => {

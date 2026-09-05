@@ -3,226 +3,287 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>ثانوية ابن سعدي | منصة الإذاعة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title data-i18n="title">ثانوية ابن سعدي | منصة الإذاعة الذكية</title>
   <link rel="icon" type="image/png" href="assets/school_logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap"
-    rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <style>
-    /* Particles Canvas */
-    #particles-js {
-      position: fixed;
-      width: 100%;
-      height: 100%;
-      top: 0;
-      left: 0;
-      z-index: -2;
-    }
+    #particles-js { position: fixed; width: 100%; height: 100%; top: 0; left: 0; z-index: -2; pointer-events: none; }
   </style>
-  
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 </head>
 
 <body class="dark">
-  <div id="bgCanvas"></div>
   <div id="particles-js"></div>
+  <div id="toastContainer" class="toast-container"></div>
 
-  <!-- HEADER -->
-  <header>
-    <img src="assets/school_logo.png" class="logo" id="schoolLogo" onerror="this.style.opacity=0.3">
-    <div class="hcenter">
-      <div id="mainClock" class="main-clock">00:00</div>
-      <div class="school-name">ثانوية ابن سعدي</div>
-      <div id="mainDate" class="main-date">جاري التحميل...</div>
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="app-header">
+    <!-- BRAND: Logos + School Name -->
+    <div class="header-brand">
+      <img src="assets/school_logo.png" class="logo header-logo" id="schoolLogo" alt="شعار المدرسة" onerror="this.style.opacity=0.3">
+      <div class="brand-text">
+        <div class="school-name" data-i18n="schoolName">ثانوية ابن سعدي</div>
+        <div class="system-tag" data-i18n="systemTag">منصة الإذاعة الذكية</div>
+      </div>
     </div>
-    <img src="assets/moe_logo.png" class="logo" id="moeLogo" onerror="this.style.opacity=0.3">
+
+    <!-- CENTER: Clock + Dates + Prayer -->
+    <div class="hcenter-widget">
+      <div class="clock-block">
+        <div id="mainClock" class="main-clock">00:00:00</div>
+        <div class="dates-row">
+          <span class="date-chip"><i class="far fa-calendar"></i> <span id="mainDateG">--/--/----</span></span>
+          <span class="date-chip hijri-chip"><i class="fas fa-moon"></i> <span id="mainDateH">--/--/----</span></span>
+        </div>
+      </div>
+      <div class="prayer-block">
+        <div class="prayer-icon-circle"><i class="fas fa-mosque"></i></div>
+        <div class="prayer-text">
+          <div class="prayer-name-row"><span data-i18n="nextPrayer">الصلاة القادمة</span>: <strong id="prayerName">...</strong></div>
+          <div class="prayer-countdown-row"><span data-i18n="remaining">المتبقي</span>: <strong id="prayerCountdown" class="countdown-digits">00:00:00</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Nav Tabs + Controls + MOE Logo -->
+    <div class="header-right">
+      <nav class="top-nav">
+        <button class="nav-tab active" id="navHomeBtn" onclick="goHome()">
+          <i class="fas fa-house"></i>
+          <span data-i18n="home">الرئيسية</span>
+        </button>
+        <button class="nav-tab" id="navAmbassadorBtn" onclick="triggerAmbassadorPortal()">
+          <i class="fas fa-user-tie"></i>
+          <span data-i18n="ambassadors">السفراء</span>
+        </button>
+        <button class="nav-tab" id="navAdminBtn" onclick="triggerAdminPortal()">
+          <i class="fas fa-sliders"></i>
+          <span data-i18n="settings">الإعدادات</span>
+        </button>
+      </nav>
+      <div class="ctrl-group">
+        <button class="ctrl-btn" id="langBtn" onclick="toggleLanguage()" title="تغيير اللغة">
+          <i class="fas fa-globe"></i>
+          <span id="langTxt">EN</span>
+        </button>
+        <button class="ctrl-btn" id="themeBtn" onclick="toggleTheme()" title="المظهر">
+          <i class="fas fa-moon" id="themeIcon"></i>
+        </button>
+      </div>
+      <img src="assets/moe_logo.png" class="logo header-logo moe-logo" id="moeLogo" alt="وزارة التعليم" onerror="this.style.opacity=0.3">
+    </div>
   </header>
 
-  <!-- TOPIC BANNER -->
-  <div id="topicBanner" class="topic-banner"
-    style="text-align: center; justify-content: center; display: flex; align-items: center; gap: 10px;">
-    <i class="fas fa-star"></i> <span id="topicText">موضوع اليوم: جاري التحميل...</span>
+  <!-- ═══════════════════ TOPIC BANNER (centered) ═══════════════════ -->
+  <div id="topicBanner" class="topic-banner">
+    <i class="fas fa-star topic-star"></i>
+    <span class="topic-label" data-i18n="topicToday">موضوع اليوم:</span>
+    <strong id="topicTitle" class="topic-title">جاري التحميل...</strong>
+    <div class="live-pill">
+      <span class="live-dot"></span>
+      <span data-i18n="systemLive">نشط</span>
+    </div>
   </div>
 
-  <!-- MAIN CARDS -->
-  <main>
-    <div class="card" id="quranCard">
-      <div class="card-shine"></div>
-      <i class="fas fa-book-open"></i>
-      <h2>القرآن الكريم</h2>
-      <p>تلاوات مختارة</p>
-    </div>
-    <div class="card card-hero" id="radioCard">
-      <div class="card-shine"></div>
-      <div class="pulse-ring"></div>
-      <i class="fas fa-microphone-lines"></i>
-      <h2>الإذاعة المدرسية</h2>
-      <p>ابدأ الإذاعة</p>
-    </div>
-    <div class="card" id="anthemCard">
-      <div class="card-shine"></div>
-      <i class="fas fa-flag"></i>
-      <h2>النشيد الوطني</h2>
-      <p>النشيد السعودي</p>
-    </div>
+  <!-- ═══════════════════ MAIN DASHBOARD ═══════════════════ -->
+  <main class="main-dashboard" id="mainDashboard">
+
+    <!-- Top Row: 3 Main Cards -->
+    <section class="cards-row">
+      <!-- Quran -->
+      <div class="card" id="quranCard" onclick="openDailyQuran()">
+        <div class="card-glow quran-glow"></div>
+        <div class="card-icon quran-icon"><i class="fas fa-book-open"></i></div>
+        <h2 data-i18n="quran">القرآن الكريم</h2>
+        <p data-i18n="quranSub">تلاوات خاشعة ومختارة</p>
+        <div class="card-btn"><i class="fas fa-play-circle"></i> <span data-i18n="listenNow">استمع الآن</span></div>
+      </div>
+
+      <!-- Radio - HERO -->
+      <div class="card card-hero" id="radioCard" onclick="startRadio()">
+        <div class="card-glow radio-glow"></div>
+        <div class="card-icon radio-icon"><i class="fas fa-microphone-lines"></i></div>
+        <h2 data-i18n="radio">الإذاعة المدرسية</h2>
+        <p data-i18n="radioSub">ابدأ إذاعة اليوم المعتمدة</p>
+        <div class="card-btn card-btn-hero"><i class="fas fa-microphone"></i> <span data-i18n="startRadio">ابدأ الإذاعة</span></div>
+      </div>
+
+      <!-- Anthem -->
+      <div class="card" id="anthemCard" onclick="playAnthem()">
+        <div class="card-glow anthem-glow"></div>
+        <div class="card-icon anthem-icon"><i class="fas fa-flag"></i></div>
+        <h2 data-i18n="anthem">النشيد الوطني</h2>
+        <p data-i18n="anthemSub">فيديو النشيد السعودي</p>
+        <div class="card-btn"><i class="fas fa-play-circle"></i> <span data-i18n="playAnthem">تشغيل</span></div>
+      </div>
+    </section>
+
+    <!-- Bottom Row: 2 Action Cards (wider) -->
+    <section class="actions-row">
+      <!-- Info Screen -->
+      <div class="action-tile" id="infoTrigger" onclick="openOv('infoOverlay')">
+        <div class="tile-icon info-tile-icon"><i class="fas fa-display"></i></div>
+        <div class="tile-body">
+          <h3 data-i18n="infoScreen">شاشة الأخبار والمعلومات</h3>
+          <p data-i18n="infoSub">الأخبار · الوقت · المشاركون · الشريط المتحرك</p>
+        </div>
+        <i class="fas fa-arrow-left tile-arrow"></i>
+      </div>
+
+      <!-- Emergency Broadcast -->
+      <div class="action-tile action-tile-emergency" id="backupTrigger" onclick="startBackupBroadcast()">
+        <div class="tile-icon emergency-tile-icon"><i class="fas fa-satellite-dish"></i></div>
+        <div class="tile-body">
+          <h3 data-i18n="backupRadio">ابدأ الإذاعة الاحتياطية</h3>
+          <p data-i18n="backupSub">إذاعة طوارئ تلقائية عند غياب الفصل المكلف</p>
+        </div>
+        <i class="fas fa-arrow-left tile-arrow"></i>
+      </div>
+    </section>
   </main>
 
-  <!-- BOTTOM ACTIONS -->
-  <section class="bottom-bar">
-    <!-- Removed Gallery Trigger -->
-    <div class="action-card" id="infoTrigger">
-      <i class="fas fa-display"></i>
-      <div>
-        <h3>شاشة المعلومات</h3>
-        <p>الأخبار · الوقت · المشاركات</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- FOOTER -->
+  <!-- ═══════════════════ FOOTER ═══════════════════ -->
   <footer class="site-footer">
-    <span>منصة الإذاعة المدرسية الذكية</span>
-    <span class="footer-credit">✦ إنشاء غيث وليث الناصر ✦</span>
+    <span class="footer-school"><i class="fas fa-graduation-cap"></i> <span data-i18n="footerText">ثانوية ابن سعدي – منصة الإذاعة الذكية</span></span>
+    <span class="footer-dev">✦ إنشاء وتطوير: غيث وليث الناصر ✦</span>
   </footer>
 
-  <!-- DOCK -->
-  <nav class="dock">
-    <button class="dock-btn" id="adminBtn" title="الإدارة"><i class="fas fa-gear"></i></button>
-    <button class="dock-btn" id="ambassadorBtn" title="السفراء"><i class="fas fa-user-tie"></i></button>
-    <button class="dock-btn" id="themeBtn" title="المظهر"><i class="fas fa-moon" id="themeIcon"></i></button>
-  </nav>
+  <!-- ═══════════════════ OVERLAYS ═══════════════════ -->
 
-  <!-- ══════════════════ OVERLAYS ══════════════════ -->
-  <!-- 1. INFO SCREEN -->
-  <div class="overlay" id="infoOverlay" style="background:var(--bg);">
-    <div id="infoBgCanvas" style="position:absolute; inset:0; z-index:-1; pointer-events:none;"></div>
-    <button class="x-btn" onclick="closeOv('infoOverlay')">✕</button>
-    <div style="display:flex; flex-direction:row; width:100vw; height:100vh; background:transparent; overflow:hidden; position:relative;">
+  <!-- INFO SCREEN OVERLAY -->
+  <div class="overlay" id="infoOverlay">
+    <div class="info-container">
+      <button class="x-btn" onclick="closeOv('infoOverlay')">✕</button>
 
-      <!-- LEFT: Clock & Info Panel (25%) -->
-      <div style="flex:1; min-width:280px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px 25px; border-left:1px solid rgba(255,255,255,0.08); background:var(--glass);">
-        <!-- Clock -->
-        <div id="infoClock" style="font-size:4.2rem; font-weight:900; color:#fff; letter-spacing:1px; text-shadow:0 0 30px rgba(26,188,156,0.5); font-variant-numeric:tabular-nums; line-height:1.1; text-align:center;">00:00</div>
-        <div id="infoDate2" style="font-size:1rem; opacity:0.7; margin-top:8px; margin-bottom:10px; text-align:center;"></div>
-        <div class="dev-credit" style="position:static; transform:none; margin-bottom:30px; font-size:0.95rem; color:var(--gold); text-shadow:0 0 10px rgba(251,192,45,0.4); opacity:1;">إنشاء غيث وليث الناصر</div>
-
-        <!-- Topic -->
-        <div style="background:var(--glass); border:1px solid rgba(251,192,45,0.3); border-radius:15px; padding:18px; width:100%; margin-bottom:25px; text-align:center;">
-          <div style="font-size:0.9rem; opacity:0.7; margin-bottom:8px;"><i class="fas fa-star" style="color:var(--gold)"></i> موضوع اليوم</div>
-          <div id="infoTopic2" style="font-size:1.4rem; color:var(--gold); font-weight:700; line-height:1.4;">جاري التحميل...</div>
+      <div class="info-sidebar">
+        <div class="info-clock-wrap">
+          <div id="infoClock" class="info-clock">00:00:00</div>
+          <div class="info-dates">
+            <span id="infoDateG" class="info-date-chip">--/--/----</span>
+            <span class="sep">•</span>
+            <span id="infoDateH" class="info-date-chip hijri">--/--/----</span>
+          </div>
         </div>
 
-        <!-- Participants -->
-        <div style="width:100%; flex:1; overflow:hidden; position:relative; border-top:1px solid rgba(255,255,255,0.08); padding-top:15px;">
-          <div style="font-size:1rem; margin-bottom:12px; text-align:center; opacity:0.8; background:transparent; position:relative; z-index:5;">
-            <i class="fas fa-users" style="color:var(--gold)"></i> مشاركو اليوم
+        <div class="info-prayer-card">
+          <div class="ipc-header"><i class="fas fa-mosque"></i> <span data-i18n="nextPrayer">الصلاة القادمة</span></div>
+          <div class="ipc-body">
+            <span id="infoPrayerName" class="ipc-name">...</span>
+            <span id="infoPrayerCountdown" class="ipc-time">00:00:00</span>
           </div>
-          <div id="participantsScrollArea" style="height:100%; overflow:hidden; position:relative;">
-            <div id="participantsBoard" style="position:absolute; width:100%; top:0; left:0; display:flex; flex-direction:column; gap:10px; will-change:transform;"></div>
+        </div>
+
+        <div class="info-topic-card">
+          <div class="itc-label"><i class="fas fa-star"></i> <span data-i18n="topicToday">موضوع اليوم</span></div>
+          <div id="infoTopic2" class="itc-text">جاري التحميل...</div>
+        </div>
+
+        <div class="info-participants">
+          <div class="participants-title"><i class="fas fa-users"></i> <span data-i18n="todayParticipants">مشاركو اليوم</span></div>
+          <div id="participantsScrollArea" class="participants-scroll-area">
+            <div id="participantsBoard" class="participants-board"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-main-area">
+        <div class="slider-frame">
+          <img id="newsImg" class="news-img" src="" alt="">
+          <div class="slider-caption">
+            <div id="newsTitle" class="news-caption-text"></div>
+            <div class="prog-bar-wrap"><div id="newsProgressBar" class="prog-bar-fill"></div></div>
+            <div id="newsIndicators" class="news-dots"></div>
+          </div>
+          <div id="newsEmpty" class="news-empty">
+            <i class="fas fa-newspaper"></i>
+            <p data-i18n="noNewsImages">لا توجد صور إخبارية. أضفها من الإعدادات.</p>
           </div>
         </div>
       </div>
 
-      <!-- RIGHT: News Image Slider (75%) -->
-      <div style="flex:3; position:relative; overflow:hidden; background:transparent; display:flex; align-items:center; justify-content:center; padding:20px; padding-bottom:100px;">
-        <div style="width:100%; height:100%; position:relative; overflow:hidden; border-radius:25px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.1); border:1px solid rgba(255,255,255,0.1);">
-          <img id="newsImg" src="" style="width:100%; height:100%; object-fit:contain; display:none; transition:opacity 0.6s ease; border-radius:20px;">
-          <!-- Indicators & Progress -->
-          <div style="position:absolute; bottom:0; left:0; width:100%; background:linear-gradient(transparent,rgba(0,0,0,0.85)); padding:40px 30px 15px; display:flex; flex-direction:column; justify-content:flex-end; z-index:5;">
-            <!-- Title overlay -->
-            <div id="newsTitle" style="display:none; color:#fff; font-size:2rem; font-weight:700; text-align:right; text-shadow:0 2px 6px rgba(0,0,0,0.9); margin-bottom:15px;"></div>
-            
-            <div style="width:100%; height:4px; background:rgba(255,255,255,0.2); border-radius:4px; overflow:hidden; margin-bottom:10px;">
-              <div id="newsProgressBar" style="height:100%; width:0%; background:var(--accent); transition: width linear;"></div>
-            </div>
-            <div id="newsIndicators" style="display:flex; justify-content:center; gap:10px;"></div>
-          </div>
-          <!-- Empty state -->
-          <div id="newsEmpty" style="color:rgba(255,255,255,0.3); text-align:center; font-size:1.5rem; padding:40px;">
-            <i class="fas fa-image" style="font-size:4rem; display:block; margin-bottom:15px;"></i>
-            أضف صوراً إخبارية من لوحة الإدارة
-          </div>
-        </div>
+      <div id="tickerContainer" class="ticker-bar">
+        <div class="ticker-label-wrap"><i class="fas fa-bullhorn"></i></div>
+        <div class="ticker-vp"><div id="tickerContent" class="ticker-txt"></div></div>
       </div>
-      <!-- Bottom Ticker -->
-      <div id="tickerContainer" style="position:absolute; bottom:0; left:0; width:100%; background:var(--bg2); padding:12px 0; border-top:3px solid var(--accent); z-index:10; overflow:hidden; display:flex; align-items:center;">
-        <div style="position:relative; overflow:hidden; width:100%; height:46px; display:flex; align-items:center;">
-          <div id="tickerContent" style="position:absolute; left:0; font-size:1.6rem; color:var(--gold); font-weight:700; white-space:nowrap; will-change:transform; line-height:1.6; padding-bottom:4px;"></div>
-        </div>
-      </div>
-    </div>
     </div>
   </div>
 
-  <!-- Removed Gallery Overlay -->
-
-  <!-- Removed Slideshow Overlay -->
-
-  <!-- 4. QURAN SELECTION -->
+  <!-- QURAN OVERLAY -->
   <div class="overlay" id="quranOverlay">
-    <div class="modal">
+    <div class="modal modal-md">
       <button class="x-btn" onclick="closeOv('quranOverlay')">✕</button>
-      <h2 class="modal-title"><i class="fas fa-book-open"></i> اختر تلاوة القرآن</h2>
-      <div id="quranListUser" class="quran-list">جاري التحميل...</div>
-      <div class="dev-credit">إنشاء غيث وليث الناصر</div>
+      <h2 class="modal-title"><i class="fas fa-book-open"></i> <span data-i18n="quranTitle">تلاوات القرآن الكريم</span></h2>
+      <div id="quranListUser" class="quran-grid">جاري التحميل...</div>
     </div>
   </div>
 
-  <!-- 5. VIDEO PLAYER (REMOVED DUPLICATE) -->
-
-  <!-- 6. LOGIN -->
+  <!-- LOGIN OVERLAY -->
   <div class="overlay" id="loginOverlay">
-    <div class="modal small">
-      <button class="x-btn" onclick="closeOv('loginOverlay')">✕</button>
-      <div id="loginIcon" class="login-icon"></div>
-      <h2 id="loginTitle" class="modal-title">دخول</h2>
-      <input type="text" id="loginPass" class="input-field" placeholder="الرمز السري" style="-webkit-text-security: disc; text-align:center; font-size:1.5rem; letter-spacing:5px;">
-      <div id="loginError" class="err-msg" style="display:none">رمز خاطئ!</div>
-      <button class="btn full-btn mt20" onclick="validateLogin()">دخول <i class="fas fa-arrow-left"></i></button>
-      <div class="dev-credit">إنشاء غيث وليث الناصر</div>
-    </div>
-  </div>
-
-  <!-- 7. AMBASSADOR DASHBOARD -->
-  <div class="overlay" id="ambOverlay">
-    <div class="modal xlarge">
-      <button class="x-btn" onclick="closeOv('ambOverlay')">✕</button>
-      <div class="db-header">
-        <h2 class="modal-title"><i class="fas fa-user-tie"></i> لوحة سفير الفصل</h2>
-        <button class="btn btn-accent" onclick="addSlide()"><i class="fas fa-plus"></i> فقرة جديدة</button>
+    <div class="modal modal-sm login-modal">
+      <button class="x-btn" onclick="closeLoginReset()">✕</button>
+      <div id="loginIcon" class="login-icon-circle"></div>
+      <h2 id="loginTitle" class="modal-title">دخول النظام</h2>
+      <p id="loginSubtitle" class="login-subtitle">أدخل الرمز السري للمتابعة</p>
+      <input type="password" id="loginPass" class="input-field pin-input" maxlength="12" placeholder="••••••" autocomplete="off">
+      <div class="pin-hint" id="pinHintBox">
+        <i class="fas fa-circle-info"></i>
+        <span id="pinHintText">الرمز الافتراضي: 1234</span>
       </div>
-      <div class="form-row">
-        <div class="fg"><label>الفصل</label>
-          <div id="classSelectDisplay" class="input-field date-disp" style="background:rgba(255,255,255,0.1); color:var(--gold);"></div>
-        </div>
-        <div class="fg"><label>تاريخ الإذاعة</label>
-          <div id="nextDay" class="input-field date-disp"></div>
-        </div>
-      </div>
-      <div id="slidesEditor" class="slides-ed"></div>
-      <button class="btn btn-gold full-btn mt20" onclick="submitRadio()">
-        <i class="fas fa-paper-plane"></i> <span id="ambSubmitBtnTxt">إرسال الإذاعة للإدارة</span>
+      <div id="loginError" class="error-msg" style="display:none">الرمز السري غير صحيح!</div>
+      <button class="btn btn-primary full-btn" onclick="validateLogin()">
+        <span data-i18n="loginBtn">دخول</span> <i class="fas fa-arrow-left"></i>
       </button>
-      <div class="dev-credit">إنشاء غيث وليث الناصر</div>
     </div>
   </div>
 
-  <!-- 8. ADMIN DASHBOARD -->
+  <!-- AMBASSADOR OVERLAY -->
+  <div class="overlay" id="ambOverlay">
+    <div class="modal modal-xl">
+      <button class="x-btn" onclick="closeAmbReset()">✕</button>
+      <div class="modal-header-row">
+        <h2 class="modal-title"><i class="fas fa-user-tie"></i> <span data-i18n="ambDashboardTitle">لوحة سفير الفصل</span></h2>
+        <button class="btn btn-accent-sm" onclick="addSlide()"><i class="fas fa-plus"></i> <span data-i18n="addSegment">فقرة جديدة</span></button>
+      </div>
+
+      <div class="class-date-row">
+        <div class="class-date-item">
+          <label data-i18n="assignedClass">الفصل</label>
+          <div id="classSelectDisplay" class="badge-display">1-1</div>
+        </div>
+        <div class="class-date-item">
+          <label data-i18n="broadcastDate">تاريخ الإذاعة</label>
+          <div id="nextDay" class="badge-display"></div>
+        </div>
+      </div>
+
+      <div id="slidesEditor" class="slides-editor"></div>
+
+      <button class="btn btn-gold full-btn mt20" onclick="submitRadio()">
+        <i class="fas fa-paper-plane"></i>
+        <span id="ambSubmitBtnTxt" data-i18n="submitBroadcast">إرسال الإذاعة للإدارة</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ADMIN OVERLAY -->
   <div class="overlay" id="adminOverlay">
-    <div class="modal xlarge">
-      <button class="x-btn" onclick="closeOv('adminOverlay')">✕</button>
-      <h2 class="modal-title"><i class="fas fa-gear"></i> الإعدادات ولوحة التحكم</h2>
-      <div class="tabs">
-        <button class="tab-btn active" onclick="showTab('tabRadios',this)"><i class="fas fa-inbox"></i> الواردة</button>
-        <button class="tab-btn" onclick="showTab('tabSettings',this)"><i class="fas fa-cog"></i> الإعدادات</button>
-        <button class="tab-btn" onclick="showTab('tabContent',this)"><i class="fas fa-photo-film"></i> المحتوى</button>
-        <button class="tab-btn" onclick="showTab('tabBackup',this)"><i class="fas fa-satellite-dish"></i> الطوارئ</button>
-        <button class="tab-btn" onclick="showTab('tabAttend',this)"><i class="fas fa-users"></i> الحضور</button>
-        <button class="tab-btn" onclick="showTab('tabSchedule',this)"><i class="fas fa-calendar-alt"></i> الجدول الذكي</button>
+    <div class="modal modal-xl">
+      <button class="x-btn" onclick="closeAdminReset()">✕</button>
+      <h2 class="modal-title"><i class="fas fa-sliders"></i> <span data-i18n="adminDashboardTitle">لوحة التحكم والإعدادات</span></h2>
+
+      <div class="tabs-strip">
+        <button class="tab-btn active" onclick="showTab('tabRadios',this)"><i class="fas fa-inbox"></i> <span data-i18n="tabRadios">الواردة</span></button>
+        <button class="tab-btn" onclick="showTab('tabSettings',this)"><i class="fas fa-key"></i> <span data-i18n="tabSettings">الرموز</span></button>
+        <button class="tab-btn" onclick="showTab('tabContent',this)"><i class="fas fa-photo-film"></i> <span data-i18n="tabContent">المحتوى</span></button>
+        <button class="tab-btn" onclick="showTab('tabBackup',this)"><i class="fas fa-satellite-dish"></i> <span data-i18n="tabBackup">الاحتياطية</span></button>
+        <button class="tab-btn" onclick="showTab('tabAttend',this)"><i class="fas fa-users"></i> <span data-i18n="tabAttend">الحضور</span></button>
+        <button class="tab-btn" onclick="showTab('tabSchedule',this)"><i class="fas fa-calendar-alt"></i> <span data-i18n="tabSchedule">الجدول</span></button>
       </div>
 
       <!-- TAB: RADIOS -->
@@ -234,28 +295,29 @@
       <div id="tabSettings" class="tab-body">
         <div class="settings-grid">
           <div class="scard">
-            <label><i class="fas fa-star"></i> موضوع اليوم</label>
+            <label><i class="fas fa-star"></i> <span data-i18n="topicToday">موضوع اليوم</span></label>
             <input type="text" id="stTopic" class="input-field" placeholder="موضوع اليوم...">
-            <button class="btn mt10" onclick="saveSt('topic', this)">حفظ</button>
+            <button class="btn btn-accent-sm mt10" onclick="saveSt('topic', this)"><i class="fas fa-save"></i> حفظ</button>
           </div>
           <div class="scard">
-            <label><i class="fas fa-key"></i> كلمة مرور الإدارة</label>
-            <input type="text" id="stAdminPw" class="input-field" placeholder="رمز الإدارة" style="-webkit-text-security: disc;">
-            <button class="btn mt10" onclick="saveSt('adminPw', this)">حفظ</button>
+            <label><i class="fas fa-user-shield"></i> <span data-i18n="adminPass">رمز الإدارة</span></label>
+            <input type="text" id="stAdminPw" class="input-field" placeholder="الافتراضي: 1234">
+            <p class="field-hint">الرمز الافتراضي: <b>1234</b></p>
+            <button class="btn btn-accent-sm mt10" onclick="saveSt('adminPw', this)"><i class="fas fa-save"></i> حفظ</button>
           </div>
-          <div class="scard full-col">
-            <label><i class="fas fa-lock"></i> كلمات مرور الفصول</label>
-            <p style="opacity:0.8; font-size:0.9rem; margin-bottom:15px;">اختر الفصل لتعيين أو تعديل الرقم السري الخاص به.</p>
-            <div style="display:flex; gap:10px; align-items:center;">
-               <select id="stClassSel" class="input-field" style="margin-bottom:0;" onchange="loadClassPw(this.value)">
-                 <option value="">اختر الفصل...</option>
-                 <option value="1-1">فصل 1-1</option><option value="1-2">فصل 1-2</option><option value="1-3">فصل 1-3</option><option value="1-4">فصل 1-4</option><option value="1-5">فصل 1-5</option><option value="1-6">فصل 1-6</option>
-                 <option value="2-1">فصل 2-1</option><option value="2-2">فصل 2-2</option><option value="2-3">فصل 2-3</option><option value="2-4">فصل 2-4</option><option value="2-5">فصل 2-5</option><option value="2-6">فصل 2-6</option>
-                 <option value="3-1">فصل 3-1</option><option value="3-2">فصل 3-2</option><option value="3-3">فصل 3-3</option><option value="3-4">فصل 3-4</option><option value="3-5">فصل 3-5</option><option value="3-6">فصل 3-6</option>
-               </select>
-               <input type="text" id="stClassPw" class="input-field" style="margin-bottom:0; -webkit-text-security:disc;" placeholder="الرقم السري">
+          <div class="scard span2">
+            <label><i class="fas fa-lock"></i> <span data-i18n="classPasses">رموز الفصول (السفراء)</span></label>
+            <p class="field-hint">الرمز الافتراضي لكل الفصول: <b>1234</b></p>
+            <div class="row-flex">
+              <select id="stClassSel" class="input-field" onchange="loadClassPw(this.value)">
+                <option value="">اختر الفصل...</option>
+                <option value="1-1">فصل 1-1</option><option value="1-2">فصل 1-2</option><option value="1-3">فصل 1-3</option><option value="1-4">فصل 1-4</option><option value="1-5">فصل 1-5</option><option value="1-6">فصل 1-6</option>
+                <option value="2-1">فصل 2-1</option><option value="2-2">فصل 2-2</option><option value="2-3">فصل 2-3</option><option value="2-4">فصل 2-4</option><option value="2-5">فصل 2-5</option><option value="2-6">فصل 2-6</option>
+                <option value="3-1">فصل 3-1</option><option value="3-2">فصل 3-2</option><option value="3-3">فصل 3-3</option><option value="3-4">فصل 3-4</option><option value="3-5">فصل 3-5</option><option value="3-6">فصل 3-6</option>
+              </select>
+              <input type="text" id="stClassPw" class="input-field" placeholder="الرقم السري">
             </div>
-            <button class="btn btn-gold full-btn mt20" onclick="saveClassPw(this)"><i class="fas fa-save"></i> حفظ الرقم السري للفصل</button>
+            <button class="btn btn-gold full-btn mt15" onclick="saveClassPw(this)"><i class="fas fa-save"></i> حفظ رمز الفصل</button>
           </div>
         </div>
       </div>
@@ -263,160 +325,138 @@
       <!-- TAB: CONTENT -->
       <div id="tabContent" class="tab-body">
         <div class="settings-grid">
-
-          <!-- Quran -->
-          <div class="scard full-col">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-              <label><i class="fas fa-book-open"></i> فيديوهات القرآن الكريم</label>
-              <button class="btn btn-accent" onclick="addQuranVideoEntry()"><i class="fas fa-plus"></i> إضافة
-                فيديو</button>
+          <div class="scard span2">
+            <div class="scard-head">
+              <label><i class="fas fa-book-open"></i> فيديوهات القرآن</label>
+              <button class="btn btn-accent-sm" onclick="addQuranVideoEntry()"><i class="fas fa-plus"></i> إضافة</button>
             </div>
-            <div id="quranAdminList" class="wisdom-list" style="max-height:250px"></div>
+            <div id="quranAdminList" class="content-list"></div>
           </div>
-
-          <!-- Anthem -->
-          <div class="scard full-col">
+          <div class="scard span2">
             <label><i class="fas fa-flag"></i> فيديو النشيد الوطني</label>
-            <p style="opacity:.7;margin:5px 0 10px;font-size:0.9rem">قم برفع فيديو النشيد الوطني الجديد هنا ليتم اعتماده تلقائياً.</p>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;">
-              <button class="btn btn-accent" id="anthemUploadBtn" onclick="uploadAnthemVideo()"><i class="fas fa-upload"></i> رفع نشيد جديد</button>
+            <div class="row-flex mt10">
+              <button class="btn btn-accent-sm" id="anthemUploadBtn" onclick="uploadAnthemVideo()"><i class="fas fa-upload"></i> رفع نشيد</button>
               <button class="btn btn-gold" id="anthemPlayBtn" onclick="playAnthem()" style="display:none;"><i class="fas fa-play"></i> معاينة</button>
-              <button class="btn btn-red" id="anthemDeleteBtn" onclick="deleteAnthemVideo()" style="display:none;"><i class="fas fa-trash"></i> حذف النشيد</button>
+              <button class="btn btn-red" id="anthemDeleteBtn" onclick="deleteAnthemVideo()" style="display:none;"><i class="fas fa-trash"></i> حذف</button>
             </div>
-            <div style="margin-top:10px">
-              <span id="currentAnthemLabel" style="color:var(--gold); font-weight:700;"></span>
-            </div>
+            <span id="currentAnthemLabel" class="status-label"></span>
           </div>
-
-          <!-- Info Screen Admin -->
-          <div class="scard full-col">
-            <label><i class="fas fa-display"></i> إدارة شاشة الأخبار والمعلومات</label>
-            <div style="display:flex;gap:10px;margin-bottom:10px; margin-top:15px;">
-              <button class="btn btn-accent" onclick="adminUploadNews()"><i class="fas fa-upload"></i> إضافة صورة إخبارية جديدة</button>
+          <div class="scard span2">
+            <label><i class="fas fa-display"></i> صور الأخبار</label>
+            <button class="btn btn-accent-sm mt10" onclick="adminUploadNews()"><i class="fas fa-upload"></i> إضافة صورة</button>
+            <div id="adminNewsList" class="content-list mt10"></div>
+            <div class="divider"></div>
+            <label><i class="fas fa-stopwatch"></i> مدة عرض الصورة (ثواني)</label>
+            <div class="row-flex mt10">
+              <input type="number" id="stNewsDuration" class="input-field" value="8" style="max-width:110px;">
+              <button class="btn btn-gold" onclick="saveSt('newsDuration', this)"><i class="fas fa-save"></i> حفظ</button>
             </div>
-            <div id="adminNewsList" class="wisdom-list" style="max-height:220px;overflow-y:auto;"></div>
-            <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.1);">
-              <label><i class="fas fa-stopwatch"></i> مدة عرض الصورة في الأخبار (ثواني)</label>
-              <div style="display:flex; gap:10px;">
-                <input type="number" id="stNewsDuration" class="input-field" value="8" style="max-width:100px; margin-bottom:0;">
-                <button class="btn btn-gold" onclick="saveSt('newsDuration', this)">حفظ المدة</button>
-              </div>
+            <div class="divider"></div>
+            <label><i class="fas fa-bullhorn"></i> الشريط الإخباري</label>
+            <div class="row-flex mt10">
+              <input type="text" id="newTickerInput" class="input-field" placeholder="أضف خبراً جديداً...">
+              <button class="btn btn-accent-sm" onclick="addTickerItem()"><i class="fas fa-plus"></i></button>
             </div>
-            
-            <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.1);">
-              <label><i class="fas fa-bullhorn"></i> الشريط الإخباري المتحرك</label>
-              <p style="opacity:0.7; font-size:0.9rem; margin-bottom:10px;">أضف أخباراً لتدور في الشريط أسفل الشاشة. سيتم أيضاً عرض أسماء المشاركين في الإذاعة تلقائياً.</p>
-              <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <input type="text" id="newTickerInput" class="input-field" placeholder="أضف خبراً جديداً للشريط..." style="margin-bottom:0;">
-                <button class="btn btn-accent" onclick="addTickerItem()"><i class="fas fa-plus"></i> إضافة</button>
-              </div>
-              <div id="tickerAdminList" class="wisdom-list" style="max-height:200px"></div>
-            </div>
+            <div id="tickerAdminList" class="content-list mt10"></div>
           </div>
         </div>
       </div>
 
-      <!-- TAB: BACKUP BROADCASTS -->
+      <!-- TAB: BACKUP -->
       <div id="tabBackup" class="tab-body">
-        <div class="scard full-col">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <label><i class="fas fa-satellite-dish" style="color:#e74c3c"></i> الإذاعات الاحتياطية (الطوارئ)</label>
-            <button class="btn" style="background:#e74c3c;color:#fff;" onclick="loadBackupBroadcasts(function(){renderBackupAdmin();openAddBackup();})"><i class="fas fa-plus"></i> إضافة إذاعة جديدة</button>
+        <div class="scard span2">
+          <div class="scard-head">
+            <label><i class="fas fa-satellite-dish"></i> الإذاعات الاحتياطية (الطوارئ)</label>
+            <button class="btn btn-red" onclick="loadBackupBroadcasts(function(){renderBackupAdmin();openAddBackup();})"><i class="fas fa-plus"></i> إضافة</button>
           </div>
-          <p style="opacity:.8;font-size:.95rem;margin-bottom:15px;">هذه الإذاعات تظهر تلقائياً للطلاب في حال غياب الفصل المكلف بالإذاعة. يتم اختيار إذاعة مختلفة كل يوم تلقائياً.</p>
-          <div id="backupAdminList" class="wisdom-list" style="max-height:400px;" onclick="if(!S_bp.list.length)loadBackupBroadcasts(renderBackupAdmin);"></div>
+          <p class="field-hint mb15">تظهر تلقائياً عند غياب الفصل المكلف بالإذاعة. تناوب تلقائي يومياً.</p>
+          <div id="backupAdminList" class="content-list" onclick="if(!S_bp.list.length)loadBackupBroadcasts(renderBackupAdmin);"></div>
         </div>
       </div>
 
       <!-- TAB: ATTENDANCE -->
       <div id="tabAttend" class="tab-body">
-        <div class="attend-toolbar" style="display:flex;gap:10px;align-items:center;margin-bottom:15px">
-          <select id="attendRadioSel" class="input-field" style="width:200px;margin-bottom:0"
-            onchange="loadAttendance()">
+        <div class="attend-toolbar">
+          <select id="attendRadioSel" class="input-field" onchange="loadAttendance()">
             <option value="">اختر إذاعة...</option>
           </select>
-          <button class="btn btn-red" onclick="deleteAttendanceRecord()"><i class="fas fa-trash"></i> مسح سجل
-            الإذاعة</button>
-          <button class="btn btn-gold" onclick="exportExcel()"><i class="fas fa-file-excel"></i> تصدير Excel</button>
+          <button class="btn btn-red" onclick="deleteAttendanceRecord()"><i class="fas fa-trash"></i> مسح</button>
+          <button class="btn btn-gold" onclick="exportExcel()"><i class="fas fa-file-excel"></i> Excel</button>
         </div>
-        <table id="attendTable" class="attend-table" style="width:100%;text-align:right">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>الفصل / التاريخ</th>
-            <th>الطالب</th>
-            <th>الفقرة</th>
-            <th>الحالة</th>
-          </tr>
-        </thead>
-        <tbody id="attendBody"></tbody>
-      </table>
+        <div class="table-wrap">
+          <table id="attendTable" class="attend-table">
+            <thead>
+              <tr><th>#</th><th>الفصل / التاريخ</th><th>الطالب</th><th>الفقرة</th><th>الحضور</th></tr>
+            </thead>
+            <tbody id="attendBody"></tbody>
+          </table>
+        </div>
       </div>
 
+      <!-- TAB: SCHEDULE -->
       <div id="tabSchedule" class="tab-body">
-        <div class="scard full-col">
-          <label><i class="fas fa-calendar-alt"></i> جدول الإذاعة الأسبوعي وكلمات المرور</label>
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <p style="opacity:0.8; font-size:0.9rem; margin-bottom:15px; max-width:70%;">قم بتعيين فصل لكل يوم. لا يمكن للسفير الدخول إلا في يومه المخصص وباستخدام كلمة المرور الخاصة بفصله. كلمات المرور ثابتة ويمكنك تعديلها.</p>
-            <button class="btn btn-accent" onclick="exportScheduleExcel()"><i class="fas fa-file-excel"></i> تصدير الجدول للطلاب</button>
+        <div class="scard span2">
+          <div class="scard-head">
+            <label><i class="fas fa-calendar-alt"></i> الجدول الأسبوعي وكلمات المرور</label>
+            <button class="btn btn-accent-sm" onclick="exportScheduleExcel()"><i class="fas fa-file-excel"></i> تصدير</button>
           </div>
-          <div id="scheduleGrid" style="display:flex; flex-direction:column; gap:10px;">
-            <!-- Populated by JS -->
-          </div>
-          <button class="btn btn-gold full-btn mt20" onclick="saveSchedule(this)"><i class="fas fa-save"></i> حفظ الجدول وكلمات المرور</button>
+          <p class="field-hint mb15">عيّن فصلاً لكل يوم. الرمز الافتراضي: <b>1234</b></p>
+          <div id="scheduleGrid" class="schedule-grid-wrap"></div>
+          <button class="btn btn-gold full-btn mt20" onclick="saveSchedule(this)"><i class="fas fa-save"></i> حفظ الجدول</button>
         </div>
       </div>
-      <div class="dev-credit">إنشاء غيث وليث الناصر</div>
     </div>
   </div>
 
   <!-- BACKUP EDIT OVERLAY -->
   <div class="overlay" id="backupEditOverlay">
-    <div class="modal xlarge">
+    <div class="modal modal-xl">
       <button class="x-btn" onclick="closeOv('backupEditOverlay')">✕</button>
-      <h2 class="modal-title"><i class="fas fa-satellite-dish" style="color:#e74c3c"></i> إذاعة احتياطية</h2>
+      <h2 class="modal-title"><i class="fas fa-satellite-dish"></i> إذاعة احتياطية</h2>
       <input type="text" id="backupNameInput" class="input-field" placeholder="اسم الإذاعة (مثال: إذاعة عن الصدق)" style="margin-bottom:15px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div class="scard-head mb10">
         <label>فقرات الإذاعة:</label>
-        <button class="btn btn-accent" onclick="addBpSeg()"><i class="fas fa-plus"></i> فقرة جديدة</button>
+        <button class="btn btn-accent-sm" onclick="addBpSeg()"><i class="fas fa-plus"></i> فقرة</button>
       </div>
-      <div id="backupSegsList" style="max-height:380px;overflow-y:auto;"></div>
-      <button class="btn btn-gold full-btn mt20" onclick="saveBackupBroadcast(this)"><i class="fas fa-save"></i> حفظ الإذاعة</button>
+      <div id="backupSegsList" class="content-list"></div>
+      <button class="btn btn-gold full-btn mt20" onclick="saveBackupBroadcast(this)"><i class="fas fa-save"></i> حفظ</button>
     </div>
   </div>
 
-  <!-- 9. RADIO PRESENTATION -->
+  <!-- PRESENTATION OVERLAY -->
   <div class="overlay" id="presOverlay">
-    <div class="pres-modal" style="position:relative;">
-      <button class="x-btn" onclick="closeOv('presOverlay')">✕</button>
-      <button onclick="startBackupBroadcast()" style="position:absolute;top:15px;left:15px;background:#e74c3c;color:#fff;border:none;border-radius:12px;padding:10px 18px;font-size:0.95rem;cursor:pointer;z-index:100;display:flex;align-items:center;gap:8px;font-family:inherit;font-weight:700;">
-        <i class="fas fa-satellite-dish"></i> الإذاعة الاحتياطية
+    <div class="pres-shell">
+      <button class="x-btn pres-close-btn" onclick="closeOv('presOverlay')">✕</button>
+      <button class="pres-emergency-btn" onclick="startBackupBroadcast()">
+        <i class="fas fa-satellite-dish"></i> إذاعة احتياطية
       </button>
       <div id="presContent" class="pres-content"></div>
-      <div class="pres-bar">
-        <button class="nav-btn" id="prevBtn" onclick="prevSlide()"><i class="fas fa-arrow-right"></i> السابق</button>
-        <div id="slideCounter" class="slide-ctr">—</div>
-        <button class="nav-btn" id="nextBtn" onclick="nextSlide()">التالي <i class="fas fa-arrow-left"></i></button>
+      <div class="pres-nav-bar">
+        <button class="pres-nav-btn" id="prevBtn" onclick="prevSlide()">
+          <i class="fas fa-arrow-right"></i> <span data-i18n="prev">السابق</span>
+        </button>
+        <div id="slideCounter" class="slide-counter">—</div>
+        <button class="pres-nav-btn pres-nav-next" id="nextBtn" onclick="nextSlide()">
+          <span data-i18n="next">التالي</span> <i class="fas fa-arrow-left"></i>
+        </button>
       </div>
-      <div class="dev-credit">إنشاء غيث وليث الناصر</div>
     </div>
   </div>
 
-  <!-- 10. MEDIA ZOOM -->
-  <div class="overlay" id="zoomOverlay" onclick="closeOv('zoomOverlay')" style="cursor:zoom-out">
-    <img id="zoomImg" style="max-width:95vw;max-height:92vh;border-radius:16px;object-fit:contain">
+  <!-- ZOOM OVERLAY -->
+  <div class="overlay" id="zoomOverlay" onclick="closeOv('zoomOverlay')">
+    <img id="zoomImg" style="max-width:95vw;max-height:92vh;border-radius:16px;object-fit:contain;" alt="">
   </div>
 
-  <!-- 11. VIDEO PLAYER OVERLAY -->
-  <div class="overlay" id="videoOverlay" style="background:rgba(0,0,0,0.98); z-index:2000;">
-    <button class="x-btn" onclick="closeVideo()" style="top:20px; right:20px; font-size:2.5rem; color:#fff; z-index:2100;">✕</button>
-    <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; padding:40px;">
-      <div style="position:relative; width:100%; max-width:1200px; max-height:80vh; background:#000; border-radius:20px; overflow:hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center;">
-        <video id="mainVideo" style="width:100%; height:100%; object-fit:contain; max-height:80vh;" controls playsinline></video>
-        <div style="position:absolute; bottom:20px; left:20px; display:flex; gap:10px; z-index:2101;">
-          <button class="btn btn-gold" onclick="toggleVideoFullscreen()"><i class="fas fa-expand"></i> تكبير الشاشة</button>
+  <!-- VIDEO OVERLAY -->
+  <div class="overlay" id="videoOverlay" style="background:rgba(0,0,0,0.97);">
+    <button class="x-btn" onclick="closeVideo()" style="color:#fff;border-color:rgba(255,255,255,0.3);">✕</button>
+    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:50px 30px;">
+      <div style="position:relative;width:100%;max-width:1100px;border-radius:20px;overflow:hidden;background:#000;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
+        <video id="mainVideo" style="width:100%;max-height:80vh;display:block;" controls playsinline></video>
+        <div style="position:absolute;bottom:20px;left:20px;z-index:10;">
+          <button class="btn btn-gold" onclick="toggleVideoFullscreen()"><i class="fas fa-expand"></i> تكبير</button>
         </div>
-        <div class="dev-credit" style="bottom:20px; color:#fff; opacity:0.5;">إنشاء غيث وليث الناصر</div>
       </div>
     </div>
   </div>
@@ -430,7 +470,7 @@
     UPLOADCARE_PUBLIC_KEY = 'f1118bb7ce070c9d80d1';
   </script>
   <script src="https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js"></script>
-  <script src="app.js?v=3.5"></script>
+  <script src="offline-db.js?v=6.0"></script>
+  <script src="app.js?v=6.0"></script>
 </body>
-
 </html>

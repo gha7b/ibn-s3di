@@ -1622,3 +1622,39 @@ function _advanceBpSegment() {
   S_bp.segIdx = (S_bp.segIdx + 1) % bc.segments.length;
   S_bp.segTimer = setTimeout(_playBpSegment, 2000);
 }
+
+// Dynamic Topic Synchronization with Backend API
+async function syncCurrentTopic() {
+  try {
+    const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
+    const backendUrl = isLocal ? 'http://localhost:3000' : '';
+    const res = await fetch(backendUrl + '/api/get-current-topic');
+    if (!res.ok) return;
+    const json = await res.json();
+    if (json && json.topic) {
+      S.topic = json.topic;
+      const elBanner = document.getElementById('topicTitle');
+      if (elBanner && elBanner.textContent !== json.topic) {
+        elBanner.textContent = json.topic;
+      }
+      const elInfo = document.getElementById('infoTopic2');
+      if (elInfo && elInfo.textContent !== json.topic) {
+        elInfo.textContent = json.topic;
+      }
+      const elInput = document.getElementById('stTopic');
+      if (elInput && document.activeElement !== elInput) {
+        elInput.value = json.topic;
+      }
+    }
+  } catch (err) {
+    // Silent catch if backend is offline
+  }
+}
+
+// Poll every 3 seconds for live topic updates
+setInterval(syncCurrentTopic, 3000);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', syncCurrentTopic);
+} else {
+  syncCurrentTopic();
+}

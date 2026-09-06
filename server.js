@@ -287,6 +287,19 @@ app.get('/api/topic', (req, res) => {
   res.json({ success: true, topic: data.weeklyTopic });
 });
 
+app.get('/api/get-current-topic', (req, res) => {
+  const data = readData();
+  const currentTopic = (data.approvedBroadcast && data.approvedBroadcast.topic) 
+    ? data.approvedBroadcast.topic 
+    : data.weeklyTopic;
+  res.json({ 
+    success: true, 
+    topic: currentTopic, 
+    weeklyTopic: data.weeklyTopic,
+    approvedBroadcast: data.approvedBroadcast
+  });
+});
+
 app.post('/api/generate', async (req, res) => {
   try {
     await generateRadioBroadcast();

@@ -982,32 +982,42 @@ function renderAdminRadios() {
 window.approveR = function(id) {
   const r = S.radios.find(x => x.id === id);
   if (!r) return;
-  const updates = {};
-  S.radios.forEach(x => { if (x.status === 'approved') updates['radios/' + x.id + '/status'] = 'pending'; });
-  updates['radios/' + id + '/status'] = 'approved';
-  if (r.slides) {
-    r.slides.forEach(sl => {
-      const attId = id + '_' + sl.student.replace(/\s+/g, '_');
-      updates['attendance/' + attId] = { student: sl.student, slide: sl.title, status: 'حاضر', class: r.class, date: r.date, radioId: id };
-    });
-  }
-  if (window.db) {
-    window.db.ref().update(updates).then(() => {
-      showToast('تم اعتماد الإذاعة بنجاح', 'success');
-    });
-  } else {
+
+  const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
+  const backendUrl = isLocal ? 'http://localhost:3000' : '';
+
+  fetch(backendUrl + '/api/broadcasts/approve/' + id, {
+    method: 'POST'
+  }).then(res => res.json()).then(data => {
+    S.radios.forEach(x => { x.status = (x.id === id) ? 'approved' : 'pending'; });
+    if (data && data.broadcast) {
+      const idx = S.radios.findIndex(x => x.id === id);
+      if (idx !== -1) S.radios[idx] = data.broadcast;
+    }
+    renderAdminRadios();
     showToast('تم اعتماد الإذاعة بنجاح', 'success');
-  }
+  }).catch(() => {
+    S.radios.forEach(x => { if (x.id === id) x.status = 'approved'; });
+    renderAdminRadios();
+    showToast('تم اعتماد الإذاعة بنجاح', 'success');
+  });
 };
 
 window.deleteR = function(id) {
-  if (confirm('حذف هذه الإذاعة نهائياً؟')) cloudRemove('radios/' + id).then(() => showToast('تم الحذف', 'info'));
+  if (confirm('حذف هذه الإذاعة نهائياً؟')) {
+    const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
+    const backendUrl = isLocal ? 'http://localhost:3000' : '';
+    fetch(backendUrl + '/api/broadcasts/' + id, { method: 'DELETE' }).catch(() => {});
+    S.radios = S.radios.filter(x => x.id !== id);
+    renderAdminRadios();
+    showToast('تم الحذف', 'info');
+  }
 };
 
 window.previewAdminR = function(i) {
   const r = S.radios[i];
-  if (r && r.slides) {
-    S.slides = r.slides;
+  if (r && (r.slides || r.sections)) {
+    S.slides = r.slides || r.sections;
     S.idx = 0;
     openOv('presOverlay');
     renderPresSlide();
@@ -1021,7 +1031,7 @@ window.adminEditR = function(id) {
   S.ambClass = r.class;
   editDraftId = r.id;
   const ed = $('slidesEditor');
-  if (ed) { ed.innerHTML = ''; slCnt = 0; r.slides.forEach(s => addSlide(s)); }
+  if (ed) { ed.innerHTML = ''; slCnt = 0; (r.slides || r.sections || []).forEach(s => addSlide(s)); }
   const cd = $('classSelectDisplay');
   if (cd) cd.innerText = `${S.ambClass} (تعديل الإدارة)`;
   openOv('ambOverlay');
@@ -1032,14 +1042,29 @@ window.saveSt = function(key, btn) {
   const ids = { topic: 'stTopic', newsDuration: 'stNewsDuration', adminPw: 'stAdminPw' };
   const el = $(ids[key]);
   if (!el || !el.value.trim()) return;
+
+  if (key === 'topic') {
+    const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
+    const backendUrl = isLocal ? 'http://localhost:3000' : '';
+    fetch(backendUrl + '/api/set-topic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: el.value.trim() })
+    }).catch(() => {});
+  }
+
   const updates = {};
   if (key === 'adminPw') updates['pw/admin'] = el.value.trim();
   else if (key === 'newsDuration') updates['newsDuration'] = parseInt(el.value) || 8;
   else updates[key] = el.value.trim();
 
-  db.ref('settings').update(updates).then(() => {
+  if (window.db) {
+    window.db.ref('settings').update(updates).then(() => {
+      showToast('تم حفظ الإعدادات بنجاح', 'success');
+    });
+  } else {
     showToast('تم حفظ الإعدادات بنجاح', 'success');
-  });
+  }
 };
 
 // SMART WEEKLY SCHEDULE
@@ -1623,27 +1648,44 @@ function _advanceBpSegment() {
   S_bp.segTimer = setTimeout(_playBpSegment, 2000);
 }
 
-// Dynamic Topic Synchronization with Backend API
+// Dynamic Topic & Broadcasts Synchronization with Backend API
 async function syncCurrentTopic() {
   try {
     const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
     const backendUrl = isLocal ? 'http://localhost:3000' : '';
+    
+    // 1. Sync Topic
     const res = await fetch(backendUrl + '/api/get-current-topic');
-    if (!res.ok) return;
-    const json = await res.json();
-    if (json && json.topic) {
-      S.topic = json.topic;
-      const elBanner = document.getElementById('topicTitle');
-      if (elBanner && elBanner.textContent !== json.topic) {
-        elBanner.textContent = json.topic;
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.topic) {
+        S.topic = json.topic;
+        const elBanner = document.getElementById('topicTitle');
+        if (elBanner && elBanner.textContent !== json.topic) {
+          elBanner.textContent = json.topic;
+        }
+        const elInfo = document.getElementById('infoTopic2');
+        if (elInfo && elInfo.textContent !== json.topic) {
+          elInfo.textContent = json.topic;
+        }
+        const elInput = document.getElementById('stTopic');
+        if (elInput && document.activeElement !== elInput) {
+          elInput.value = json.topic;
+        }
       }
-      const elInfo = document.getElementById('infoTopic2');
-      if (elInfo && elInfo.textContent !== json.topic) {
-        elInfo.textContent = json.topic;
-      }
-      const elInput = document.getElementById('stTopic');
-      if (elInput && document.activeElement !== elInput) {
-        elInput.value = json.topic;
+    }
+
+    // 2. Sync Broadcasts List (Pending & Approved)
+    const resBc = await fetch(backendUrl + '/api/broadcasts');
+    if (resBc.ok) {
+      const jsonBc = await resBc.json();
+      if (jsonBc && Array.isArray(jsonBc.broadcasts)) {
+        S.radios = jsonBc.broadcasts;
+        const adm = $('adminOverlay');
+        if (adm && adm.classList.contains('open')) {
+          renderAdminRadios();
+          if (typeof populateAttendanceRadios === 'function') populateAttendanceRadios();
+        }
       }
     }
   } catch (err) {
@@ -1651,7 +1693,7 @@ async function syncCurrentTopic() {
   }
 }
 
-// Poll every 3 seconds for live topic updates
+// Poll every 3 seconds for live updates
 setInterval(syncCurrentTopic, 3000);
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', syncCurrentTopic);

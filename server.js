@@ -12,15 +12,27 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 function readData() {
   try {
     if (!fs.existsSync(DATA_FILE)) {
-      const initial = { weeklyTopic: "احترام المعلم والانضباط المدرسي", draftBroadcast: null, approvedBroadcast: null };
+      const initial = {
+        weeklyTopic: "احترام المعلم والانضباط المدرسي",
+        draftBroadcast: null,
+        approvedBroadcast: null,
+        broadcasts: []
+      };
       fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
       return initial;
     }
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.broadcasts)) parsed.broadcasts = [];
+    return parsed;
   } catch (err) {
     console.error("Error reading data.json:", err);
-    return { weeklyTopic: "احترام المعلم والانضباط المدرسي", draftBroadcast: null, approvedBroadcast: null };
+    return {
+      weeklyTopic: "احترام المعلم والانضباط المدرسي",
+      draftBroadcast: null,
+      approvedBroadcast: null,
+      broadcasts: []
+    };
   }
 }
 
@@ -66,7 +78,7 @@ async function safeSendMessage(chatId, text, options = {}) {
 // Command /start handler
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  safeSendMessage(chatId, "👋 **أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)**\n\nالأوامر المتاحة لمدير النظام:\n- `/set_topic` : تغيير موضوع/قيمة الأسبوع.\n- `/generate` : توليد إذاعة تجريبية جديدة فوراً.", { parse_mode: 'Markdown' });
+  safeSendMessage(chatId, "👋 **أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)**\n\nالأوامر المتاحة لمدير النظام:\n- `/set_topic` : تغيير موضوع/قيمة الأسبوع.\n- `/generate` : توليد إذاعة جديدة وإرسالها بانتظار الاعتماد.", { parse_mode: 'Markdown' });
 });
 
 // Command /set_topic handler
@@ -85,7 +97,7 @@ bot.onText(/\/generate/, (msg) => {
   if (String(chatId) !== String(ADMIN_CHAT_ID)) {
     return safeSendMessage(chatId, "⚠️ غير مصرح لك بتنفيذ هذا الأمر.");
   }
-  safeSendMessage(chatId, "⏳ جاري توليد الإذاعة وتجهيزها...");
+  safeSendMessage(chatId, "⏳ جاري توليد الإذاعة بواسطة Gemini وإضافتها إلى قائمة الإذاعات بانتظار الاعتماد...");
   generateRadioBroadcast();
 });
 
@@ -101,7 +113,7 @@ bot.on('message', (msg) => {
     saveData(data);
 
     delete userState[chatId];
-    safeSendMessage(chatId, `✅ تم اعتماد قيمة الأسبوع الجديدة بنجاح:\n"${newTopic}"`);
+    safeSendMessage(chatId, `✅ تم تحديث موضوع اليوم وقيمة الأسبوع بنجاح:\n"${newTopic}"\nتم تحديث الواجهة الرئيسية وشاشة الإعدادات في الموقع تلقائياً.`);
   }
 });
 
@@ -112,18 +124,25 @@ bot.on('callback_query', (query) => {
     return bot.answerCallbackQuery(query.id, { text: "⚠️ غير مصرح لك بهذا الاجراء" }).catch(() => {});
   }
 
-  if (query.data === 'approve_broadcast') {
+  if (query.data.startsWith('approve_broadcast:')) {
+    const broadcastId = query.data.split('approve_broadcast:')[1];
     const data = readData();
-    if (!data.draftBroadcast) {
-      return bot.answerCallbackQuery(query.id, { text: "❌ لا توجد إذاعة بانتظار الاعتماد" }).catch(() => {});
+    const target = data.broadcasts.find(b => String(b.id) === String(broadcastId));
+
+    if (!target) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ الإذاعة غير موجودة" }).catch(() => {});
     }
 
-    // Set approved broadcast without calling Gemini (Zero extra tokens)
-    data.approvedBroadcast = data.draftBroadcast;
+    // Update status to approved for target, pending for others
+    data.broadcasts.forEach(b => {
+      b.status = (String(b.id) === String(broadcastId)) ? 'approved' : 'pending';
+    });
+
+    data.approvedBroadcast = target;
     saveData(data);
 
-    bot.answerCallbackQuery(query.id, { text: "✅ تم الاعتماد ونشر الإذاعة على شاشات الموقع!" }).catch(() => {});
-    safeSendMessage(chatId, "🎉 **تم اعتماد ونشر الإذاعة بنجاح!**\nالإذاعة معروضة الآن على شاشات الموقع فوراً.");
+    bot.answerCallbackQuery(query.id, { text: "✅ تم الاعتماد ونشر الإذاعة على الموقع!" }).catch(() => {});
+    safeSendMessage(chatId, `🎉 **تم اعتماد ونشر الإذاعة بنجاح!**\nموضوع الإذاعة: "${target.topic}"\nالإذاعة معروضة الآن على شاشة الموقع الرئيسية وتطبيق الإذاعة.`);
   }
 });
 
@@ -158,6 +177,7 @@ async function generateRadioBroadcast() {
   const data = readData();
   const topic = data.weeklyTopic || "احترام المعلم والانضباط المدرسي";
   const dateStr = new Date().toLocaleDateString('ar-SA');
+  const broadcastId = 'radio_' + Date.now();
 
   const prompt = `أنت مسؤول عن إعداد إذاعة مدرسية لثانوية ابن سعدي.
 المطلوب إنشاء إذاعة مدرسية كاملة حول الموضوع التالي فقط: "${topic}".
@@ -229,23 +249,33 @@ async function generateRadioBroadcast() {
     resultSections = generateFallbackSections(topic);
   }
 
-  // Save as draft
-  const draft = {
-    id: Date.now(),
-    generatedAt: new Date().toISOString(),
+  // Convert sections into slides structure for site player & admin dashboard
+  const slides = resultSections.map(sec => ({
+    student: 'الذكاء الاصطناعي (Gemini)',
+    title: sec.title,
+    content: sec.content
+  }));
+
+  const radioRecord = {
+    id: broadcastId,
+    class: 'ذكاء اصطناعي (Gemini Bot)',
     date: dateStr,
+    status: 'pending',
     topic: topic,
-    sections: resultSections
+    slides: slides,
+    timestamp: Date.now()
   };
 
-  data.draftBroadcast = draft;
+  // Add to database broadcasts array
+  data.broadcasts.unshift(radioRecord);
+  data.draftBroadcast = radioRecord;
   saveData(data);
 
   // Format Telegram Message
-  let telegramMsg = `🎙 **إذاعة جديدة بانتظار الاعتماد**\n📌 **موضوع الأسبوع:** ${draft.topic}\n📅 **تاريخ الإذاعة:** ${dateStr}\n\n`;
+  let telegramMsg = `🎙 **إذاعة جديدة بانتظار الاعتماد (Pending)**\n📌 **موضوع الأسبوع:** ${topic}\n📅 **تاريخ الإذاعة:** ${dateStr}\n\n`;
 
   const sectionIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
-  draft.sections.forEach((sec, idx) => {
+  resultSections.forEach((sec, idx) => {
     telegramMsg += `${sectionIcons[idx] || "🔹"} **${sec.title}:**\n${sec.content}\n\n`;
   });
 
@@ -254,12 +284,12 @@ async function generateRadioBroadcast() {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: [
-        [{ text: "✅ اعتماد ونشر الإذاعة", callback_data: "approve_broadcast" }]
+        [{ text: "✅ اعتماد ونشر الإذاعة", callback_data: `approve_broadcast:${broadcastId}` }]
       ]
     }
   });
 
-  console.log("✅ Broadcast draft created successfully and stored.");
+  console.log(`✅ Broadcast record created (id: ${broadcastId}, status: pending) and saved to database.`);
 }
 
 // --- Cron Job Scheduling ---
@@ -271,15 +301,18 @@ cron.schedule('0 16 * * 0-4', () => {
   timezone: "Asia/Riyadh"
 });
 
-// --- API Endpoints for Frontend ---
-app.get('/api/broadcast/approved', (req, res) => {
-  const data = readData();
-  res.json({ success: true, data: data.approvedBroadcast });
-});
+// --- API Endpoints for Frontend & Database Webhooks ---
 
-app.get('/api/broadcast/draft', (req, res) => {
+// 1. Topic Endpoints
+app.get('/api/get-current-topic', (req, res) => {
   const data = readData();
-  res.json({ success: true, data: data.draftBroadcast });
+  const approvedTopic = data.approvedBroadcast ? data.approvedBroadcast.topic : data.weeklyTopic;
+  res.json({
+    success: true,
+    topic: approvedTopic,
+    weeklyTopic: data.weeklyTopic,
+    approvedBroadcast: data.approvedBroadcast
+  });
 });
 
 app.get('/api/topic', (req, res) => {
@@ -287,17 +320,61 @@ app.get('/api/topic', (req, res) => {
   res.json({ success: true, topic: data.weeklyTopic });
 });
 
-app.get('/api/get-current-topic', (req, res) => {
+app.post('/api/set-topic', (req, res) => {
+  const { topic } = req.body;
+  if (!topic) return res.status(400).json({ success: false, error: "Topic is required" });
+  
   const data = readData();
-  const currentTopic = (data.approvedBroadcast && data.approvedBroadcast.topic) 
-    ? data.approvedBroadcast.topic 
-    : data.weeklyTopic;
-  res.json({ 
-    success: true, 
-    topic: currentTopic, 
-    weeklyTopic: data.weeklyTopic,
-    approvedBroadcast: data.approvedBroadcast
+  data.weeklyTopic = topic;
+  saveData(data);
+
+  res.json({ success: true, topic: data.weeklyTopic, message: "تم تحديث موضوع اليوم بنجاح" });
+});
+
+// 2. Broadcasts Management Endpoints (Pending & Approved)
+app.get('/api/broadcasts', (req, res) => {
+  const data = readData();
+  res.json({ success: true, broadcasts: data.broadcasts || [] });
+});
+
+app.get('/api/broadcasts/pending', (req, res) => {
+  const data = readData();
+  const pendingList = (data.broadcasts || []).filter(b => b.status === 'pending');
+  res.json({ success: true, broadcasts: pendingList });
+});
+
+app.get('/api/broadcast/approved', (req, res) => {
+  const data = readData();
+  const approved = (data.broadcasts || []).find(b => b.status === 'approved') || data.approvedBroadcast;
+  res.json({ success: true, data: approved });
+});
+
+app.post('/api/broadcasts/approve/:id', (req, res) => {
+  const { id } = req.params;
+  const data = readData();
+  const target = (data.broadcasts || []).find(b => String(b.id) === String(id));
+  
+  if (!target) {
+    return res.status(404).json({ success: false, error: "Broadcast not found" });
+  }
+
+  data.broadcasts.forEach(b => {
+    b.status = (String(b.id) === String(id)) ? 'approved' : 'pending';
   });
+
+  target.status = 'approved';
+  data.approvedBroadcast = target;
+  saveData(data);
+
+  res.json({ success: true, message: "تم اعتماد الإذاعة بنجاح وتحديث الواجهة الرئيسية", broadcast: target });
+});
+
+app.delete('/api/broadcasts/:id', (req, res) => {
+  const { id } = req.params;
+  const data = readData();
+  data.broadcasts = (data.broadcasts || []).filter(b => String(b.id) !== String(id));
+  saveData(data);
+  res.json({ success: true, message: "تم حذف الإذاعة بنجاح" });
 });
 
 app.post('/api/generate', async (req, res) => {

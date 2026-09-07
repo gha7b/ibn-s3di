@@ -304,7 +304,7 @@ async function generateRadioBroadcast() {
   }
 
   // Official supported models list for @google/genai
-  const modelNames = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-pro'];
+  const modelNames = ['gemini-3.1-pro-preview', 'gemini-2.5-flash', 'gemini-2.5-pro'];
   let sections = null;
   let lastError = null;
 

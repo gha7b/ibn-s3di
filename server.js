@@ -303,8 +303,8 @@ async function generateRadioBroadcast() {
     return;
   }
 
-  // Model fallback list
-  const modelNames = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+  // Official supported models list
+  const modelNames = ['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'];
   let sections = null;
   let lastError = null;
 

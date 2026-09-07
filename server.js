@@ -303,8 +303,8 @@ async function generateRadioBroadcast() {
     return;
   }
 
-  // Official supported models list for @google/genai
-  const modelNames = ['gemini-3.1-pro-preview', 'gemini-1.5-flash'];
+  // Official supported models list for @google/genai SDK
+  const modelNames = ['gemini-2.5-flash', 'gemini-3.1-pro-preview'];
   let sections = null;
   let lastError = null;
 
@@ -395,4 +395,4 @@ cron.schedule('0 0 * * *', () => {
   autoCleanupOldBroadcasts();
 }, { timezone: "Asia/Riyadh" });
 
-console.log("🤖 Telegram Bot started successfully with @google/generative-ai SDK.");
+console.log("🤖 Telegram Bot started successfully with @google/genai SDK.");

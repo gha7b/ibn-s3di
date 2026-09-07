@@ -1654,7 +1654,7 @@ async function syncCurrentTopic() {
     const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
     const backendUrl = isLocal ? 'http://localhost:3000' : '';
     
-    // 1. Sync Topic
+    // 1. Sync Topic & Approved Broadcast
     const res = await fetch(backendUrl + '/api/get-current-topic');
     if (res.ok) {
       const json = await res.json();
@@ -1673,9 +1673,16 @@ async function syncCurrentTopic() {
           elInput.value = json.topic;
         }
       }
+
+      if (json && json.approvedBroadcast && json.approvedBroadcast.slides) {
+        if (JSON.stringify(S.slides) !== JSON.stringify(json.approvedBroadcast.slides)) {
+          S.slides = json.approvedBroadcast.slides;
+          if (typeof renderSlide === 'function') renderSlide();
+        }
+      }
     }
 
-    // 2. Sync Broadcasts List (Pending & Approved)
+    // 2. Sync Broadcasts List (Pending & Approved for Admin)
     const resBc = await fetch(backendUrl + '/api/broadcasts');
     if (resBc.ok) {
       const jsonBc = await resBc.json();

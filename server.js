@@ -23,6 +23,7 @@ if (!TELEGRAM_BOT_TOKEN || !ADMIN_CHAT_ID) {
 // ═══════════════════════════════════════════════════════
 async function fbGet(path) {
   const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`);
+  if (!res.ok) throw new Error(`Firebase GET failed: ${res.status}`);
   return res.json();
 }
 
@@ -32,6 +33,7 @@ async function fbSet(path, value) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(value)
   });
+  if (!res.ok) throw new Error(`Firebase SET failed: ${res.status}`);
   return res.json();
 }
 
@@ -41,20 +43,28 @@ async function fbUpdate(updates) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
   });
+  if (!res.ok) throw new Error(`Firebase PATCH failed: ${res.status}`);
   return res.json();
+}
+
+async function fbDelete(path) {
+  await fetch(`${FIREBASE_DB_URL}/${path}.json`, { method: 'DELETE' });
 }
 
 // ═══════════════════════════════════════════════════════
 // TOPIC MANAGEMENT
 // ═══════════════════════════════════════════════════════
 async function getWeeklyTopic() {
-  const topic = await fbGet('settings/topic');
-  return topic || 'احترام المعلم والانضباط المدرسي';
+  try {
+    const topic = await fbGet('settings/topic');
+    return topic || 'احترام المعلم والانضباط المدرسي';
+  } catch (e) {
+    return 'احترام المعلم والانضباط المدرسي';
+  }
 }
 
 async function setWeeklyTopic(topic) {
   await fbSet('settings/topic', topic);
-  // Also notify Vercel API for frontend caching
   try {
     await fetch(`${SITE_URL}/api/set-topic`, {
       method: 'POST',
@@ -62,18 +72,69 @@ async function setWeeklyTopic(topic) {
       body: JSON.stringify({ topic })
     });
   } catch (e) {
-    // Silent - Firebase already updated
+    // Vercel fallback
   }
 }
 
 // ═══════════════════════════════════════════════════════
-// BROADCAST MANAGEMENT - Firebase as source of truth
+// RESPONSIBLE CLASS — reads from Firebase schedule/{dayIndex}
+// ═══════════════════════════════════════════════════════
+async function getResponsibleClass() {
+  try {
+    const schedule = await fbGet('schedule');
+    if (!schedule || typeof schedule !== 'object') return null;
+
+    const riyad = new Date().toLocaleString('en-US', { timeZone: 'Asia/Riyadh' });
+    const dayIndex = new Date(riyad).getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+    const dayEntry = schedule[dayIndex];
+    if (dayEntry && dayEntry.class && dayEntry.class.trim()) {
+      return dayEntry.class.trim();
+    }
+    return null;
+  } catch (e) {
+    console.warn('⚠️ Could not read schedule from Firebase:', e.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// AUTO-CLEANUP: Delete pending broadcasts older than 24h
+// ═══════════════════════════════════════════════════════
+async function autoCleanupOldBroadcasts() {
+  try {
+    const allRadios = await fbGet('radios');
+    if (!allRadios || typeof allRadios !== 'object') return;
+
+    const now = Date.now();
+    const cutoff24h = now - 24 * 60 * 60 * 1000;
+    const toDelete = [];
+
+    Object.keys(allRadios).forEach(key => {
+      const r = allRadios[key];
+      if (r.status === 'pending' && r.timestamp && r.timestamp < cutoff24h) {
+        toDelete.push(key);
+      }
+    });
+
+    if (toDelete.length > 0) {
+      for (const key of toDelete) {
+        await fbDelete(`radios/${key}`);
+        console.log(`🗑️ Auto-deleted old pending broadcast: ${key}`);
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ Auto-cleanup error:', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// BROADCAST MANAGEMENT
 // ═══════════════════════════════════════════════════════
 async function saveBroadcastToFirebase(broadcastId, broadcastData, status) {
   await fbSet(`radios/${broadcastId}`, { ...broadcastData, status });
 
   if (status === 'approved') {
-    // Reset all other approved broadcasts to pending
     const allRadios = await fbGet('radios');
     if (allRadios && typeof allRadios === 'object') {
       const resetUpdates = {};
@@ -87,13 +148,22 @@ async function saveBroadcastToFirebase(broadcastId, broadcastData, status) {
       }
     }
 
-    // Write to approvedBroadcast node
     await fbSet('approvedBroadcast', { ...broadcastData, id: broadcastId, status: 'approved' });
 
-    // Update topic from the approved broadcast
     if (broadcastData.topic) {
       await fbSet('settings/topic', broadcastData.topic);
     }
+  }
+
+  // Notify Vercel API Route
+  try {
+    await fetch(`${SITE_URL}/api/update-broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: broadcastId, ...broadcastData, status })
+    });
+  } catch (e) {
+    // Vercel fallback
   }
 }
 
@@ -108,9 +178,6 @@ async function safeSendMessage(chatId, text, options = {}) {
     return await bot.sendMessage(chatId, text, options);
   } catch (err) {
     console.warn(`⚠️ Telegram (Chat: ${chatId}):`, err.message);
-    if (err.message.includes('chat not found')) {
-      console.warn("📌 افتح البوت في تليجرام واضغط /start أولاً.");
-    }
   }
 }
 
@@ -118,35 +185,45 @@ function isAdmin(chatId) {
   return String(chatId) === String(ADMIN_CHAT_ID);
 }
 
-// /start
+// Commands
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   safeSendMessage(chatId,
-    "👋 **أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)**\n\n" +
+    "👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\n" +
     "الأوامر المتاحة:\n" +
     "- `/set_topic` — تغيير موضوع/قيمة الأسبوع\n" +
-    "- `/generate` — توليد إذاعة جديدة وإرسالها للاعتماد",
+    "- `/generate` — توليد إذاعة جديدة مبتكرة وإرسالها للاعتماد\n" +
+    "- `/cleanup` — حذف الإذاعات المعلقة القديمة يدوياً",
     { parse_mode: 'Markdown' }
   );
 });
 
-// /set_topic
 bot.onText(/\/set_topic/, (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
   userState[chatId] = 'WAITING_FOR_TOPIC';
-  safeSendMessage(chatId, "اكتب موضوع/قيمة الأسبوع الجديدة.");
+  safeSendMessage(chatId, "✏️ اكتب موضوع/قيمة الأسبوع الجديدة:");
 });
 
-// /generate
 bot.onText(/\/generate/, (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
-  safeSendMessage(chatId, "⏳ جاري التوليد...");
+  safeSendMessage(chatId, "⏳ جاري توليد الإذاعة الذكية عبر الذكاء الاصطناعي...");
   generateRadioBroadcast();
 });
 
-// Text handler for waiting states
+bot.onText(/\/cleanup/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
+  safeSendMessage(chatId, "🗑️ جاري حذف الإذاعات المعلقة القديمة...");
+  try {
+    await autoCleanupOldBroadcasts();
+    safeSendMessage(chatId, "✅ تم تنظيف قاعدة البيانات بنجاح.");
+  } catch (e) {
+    safeSendMessage(chatId, `❌ خطأ: ${e.message}`);
+  }
+});
+
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   if (!msg.text || msg.text.startsWith('/')) return;
@@ -158,7 +235,7 @@ bot.on('message', async (msg) => {
     try {
       await setWeeklyTopic(newTopic);
       safeSendMessage(chatId,
-        `✅ تم تحديث موضوع الأسبوع بنجاح في Firebase:\n"${newTopic}"\n\n` +
+        `✅ تم تحديث موضوع الأسبوع بنجاح:\n"${newTopic}"\n\n` +
         `🌐 سيظهر على الموقع فوراً: ${SITE_URL}`
       );
     } catch (err) {
@@ -167,7 +244,6 @@ bot.on('message', async (msg) => {
   }
 });
 
-// Inline button callback (approve)
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   if (!isAdmin(chatId)) {
@@ -178,16 +254,19 @@ bot.on('callback_query', async (query) => {
     const broadcastId = query.data.split('approve_broadcast:')[1];
 
     try {
+      bot.answerCallbackQuery(query.id, { text: "⏳ جاري الاعتماد..." }).catch(() => {});
+
       const broadcast = await fbGet(`radios/${broadcastId}`);
       if (!broadcast) {
         return bot.answerCallbackQuery(query.id, { text: "❌ الإذاعة غير موجودة" }).catch(() => {});
       }
 
       await saveBroadcastToFirebase(broadcastId, broadcast, 'approved');
-      bot.answerCallbackQuery(query.id, { text: "✅ تم الاعتماد والنشر!" }).catch(() => {});
+
       safeSendMessage(chatId,
-        `🎉 **تم اعتماد ونشر الإذاعة على الموقع فوراً!**\n` +
+        `🎉 *تم اعتماد ونشر الإذاعة على الموقع فوراً!*\n` +
         `📌 الموضوع: "${broadcast.topic}"\n` +
+        `🏫 الفصل: "${broadcast.class || 'غير محدد'}"\n` +
         `🌐 الموقع: ${SITE_URL}`,
         { parse_mode: 'Markdown' }
       );
@@ -199,84 +278,80 @@ bot.on('callback_query', async (query) => {
 });
 
 // ═══════════════════════════════════════════════════════
-// SMART FALLBACK BROADCAST GENERATOR
+// DYNAMIC GENERATION VIA GEMINI & BACKUP GENERATOR
 // ═══════════════════════════════════════════════════════
-function generateFallbackSections(topic) {
-  return [
-    { title: "المقدمة والترحيب", content: `بسم الله الرحمن الرحيم. يسعدنا في ثانوية ابن سعدي تقديم إذاعتنا المدرسية لهذا اليوم حول قيمة: (${topic}).` },
-    { title: "كلمة الصباح", content: `إن الالتزام بقيمة (${topic}) هو الركيزة الأساسية لبناء مجتمع مدرسي واعٍ ومتميز.` },
-    { title: "حديث شريف", content: `عن أبي هريرة رضي الله عنه أن رسول الله ﷺ قال: «إنَّما بُعِثْتُ لأُتَمِّمَ صَالِحَ الأخْلَاقِ».` },
-    { title: "رسالة للطلاب / شعر", content: `قُم لِلمُعَلِّمِ وَوَفِّهِ التَبجيلا ... كادَ المُعَلِّمُ أَن يَكونَ رَسولا` },
-    { title: "الخاتمة", content: `نسأل الله أن يوفقنا جميعاً. كان معكم فريق الإذاعة المدرسية بثانوية ابن سعدي. والسلام عليكم ورحمة الله.` }
-  ];
-}
+const { generateDynamicBroadcastSections } = require('./dynamic-generator');
 
-// ═══════════════════════════════════════════════════════
-// GEMINI BROADCAST GENERATION
-// ═══════════════════════════════════════════════════════
 async function generateRadioBroadcast() {
+  await autoCleanupOldBroadcasts();
+
   const topic = await getWeeklyTopic();
-  const dateStr = new Date().toLocaleDateString('ar-SA');
+  const responsibleClass = await getResponsibleClass();
+  const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const prompt = `أنت مسؤول عن إعداد إذاعة مدرسية لثانوية ابن سعدي.
-اكتب إذاعة مدرسية حول: "${topic}".
+  const prompt = `أنت مسؤول الإذاعة المدرسية في ثانوية ابن سعدي.
+اكتب إذاعة مدرسية ممتازة ومبتكرة جداً حول موضوع: "${topic}".
+الفقرات المطلوبة (5 فقرات):
+1. المقدمة والترحيب
+2. كلمة الصباح
+3. حديث شريف
+4. رسالة للطلاب / شعر
+5. الخاتمة
 
-شروط صارمة:
-1. 5 فقرات فقط بالترتيب: مقدمة وترحيب، كلمة الصباح، حديث شريف صحيح، رسالة للطلاب أو أبيات شعرية عربية حقيقية، الخاتمة.
-2. كل فقرة من 1 إلى 4 أسطر فقط.
-3. الالتزام التام بموضوع: "${topic}".
-
-أرجع JSON فقط بهذا الشكل بدون أي نص خارجه:
+أرجع النتيجة بصيغة JSON حصرية كالآتي:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"حديث شريف","content":"..."},{"title":"رسالة للطلاب / شعر","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
   const endpoints = [
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`,
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`
   ];
 
   let sections = null;
   for (const url of endpoints) {
     const modelName = url.split('/models/')[1].split(':')[0];
     try {
-      console.log(`🤖 Trying ${modelName}...`);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
+          generationConfig: { temperature: 0.8, responseMimeType: "application/json" }
         })
       });
       const data = await response.json();
-      if (data?.candidates?.[0]?.content) {
+      if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
         const text = data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(text);
         if (parsed.sections && Array.isArray(parsed.sections)) {
           sections = parsed.sections;
-          console.log(`✅ Gemini succeeded: ${modelName}`);
+          console.log(`✅ Gemini API generation succeeded using ${modelName}`);
           break;
         }
       }
     } catch (e) {
-      console.warn(`⚠️ ${modelName}:`, e.message);
+      console.warn(`⚠️ ${modelName} call failed:`, e.message);
     }
   }
 
+  // Dynamic fallback generator if Gemini API key quota is reached
   if (!sections) {
-    console.log("ℹ️ Using fallback sections.");
-    sections = generateFallbackSections(topic);
+    console.log("ℹ️ Generating dynamic broadcast tailored to topic.");
+    sections = generateDynamicBroadcastSections(topic);
   }
 
+  // Never use "Gemini" or "AI"
+  const classLabel = responsibleClass || 'فصل غير محدد';
+
   const slides = sections.map(sec => ({
-    student: 'الذكاء الاصطناعي (Gemini)',
+    student: classLabel,
     title: sec.title,
     content: sec.content
   }));
 
   const broadcastData = {
-    class: 'ذكاء اصطناعي (Gemini Bot)',
+    class: classLabel,
     date: dateStr,
     status: 'pending',
     topic,
@@ -284,18 +359,18 @@ async function generateRadioBroadcast() {
     timestamp: Date.now()
   };
 
-  // Save to Firebase with status: pending
   await saveBroadcastToFirebase(broadcastId, broadcastData, 'pending');
-  console.log(`✅ Saved to Firebase (radios/${broadcastId}) with status: pending`);
 
-  // Format Telegram message
   const icons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
-  let msg = `🎙 *إذاعة جديدة — بانتظار الاعتماد*\n📌 *الموضوع:* ${topic}\n📅 *التاريخ:* ${dateStr}\n\n`;
+  let msgText = `🎙 *إذاعة جديدة — بانتظار الاعتماد*\n`;
+  msgText += `📌 *الموضوع:* ${topic}\n`;
+  msgText += `🏫 *الفصل المسؤول:* ${classLabel}\n`;
+  msgText += `📅 *التاريخ:* ${dateStr}\n\n`;
   sections.forEach((sec, i) => {
-    msg += `${icons[i]} *${sec.title}:*\n${sec.content}\n\n`;
+    msgText += `${icons[i]} *${sec.title}:*\n${sec.content}\n\n`;
   });
 
-  await safeSendMessage(ADMIN_CHAT_ID, msg, {
+  await safeSendMessage(ADMIN_CHAT_ID, msgText, {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: [
@@ -305,19 +380,15 @@ async function generateRadioBroadcast() {
   });
 }
 
-// ═══════════════════════════════════════════════════════
-// CRON: Daily Sunday-Thursday at 4:00 PM Riyadh time
-// ═══════════════════════════════════════════════════════
-cron.schedule('0 16 * * 0-4', () => {
+// Cron Jobs
+cron.schedule('0 7 * * 0-4', () => {
   console.log("⏰ Cron: Generating daily broadcast...");
   generateRadioBroadcast();
 }, { timezone: "Asia/Riyadh" });
 
-// ═══════════════════════════════════════════════════════
-// STARTUP — Immediate test run
-// ═══════════════════════════════════════════════════════
-console.log("🤖 Telegram Bot started...");
-console.log(`🔥 Firebase DB: ${FIREBASE_DB_URL}`);
-console.log(`🌐 Vercel Site: ${SITE_URL}`);
-console.log("⚡ Running immediate test broadcast in 2 seconds...");
-setTimeout(() => generateRadioBroadcast(), 2000);
+cron.schedule('0 0 * * *', () => {
+  console.log("🗑️ Cron: Auto-cleanup old pending broadcasts...");
+  autoCleanupOldBroadcasts();
+}, { timezone: "Asia/Riyadh" });
+
+console.log("🤖 Telegram Bot started successfully.");

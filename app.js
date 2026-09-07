@@ -1003,14 +1003,35 @@ window.approveR = function(id) {
   });
 };
 
-window.deleteR = function(id) {
-  if (confirm('حذف هذه الإذاعة نهائياً؟')) {
-    const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
-    const backendUrl = isLocal ? 'http://localhost:3000' : '';
-    fetch(backendUrl + '/api/broadcasts/' + id, { method: 'DELETE' }).catch(() => {});
+window.deleteR = async function(id) {
+  if (!confirm('حذف هذه الإذاعة نهائياً؟')) return;
+
+  const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
+  const backendUrl = isLocal ? 'http://localhost:3000' : '';
+
+  try {
+    // 1. Delete from Firebase directly if client SDK is initialized
+    if (window.db) {
+      await cloudRemove('radios/' + id);
+      const appRes = await window.db.ref('approvedBroadcast').once('value');
+      const appBc = appRes.val();
+      if (appBc && appBc.id === id) {
+        await cloudRemove('approvedBroadcast');
+      }
+    }
+
+    // 2. Call API Route as primary/fallback server call
+    await fetch(backendUrl + '/api/delete-broadcast?id=' + id, { method: 'DELETE' });
+
+    // 3. Update local state & UI after server deletion confirmation
     S.radios = S.radios.filter(x => x.id !== id);
     renderAdminRadios();
-    showToast('تم الحذف', 'info');
+    showToast('تم حذف الإذاعة بنجاح من قاعدة البيانات', 'info');
+
+    // Trigger sync to refresh state cleanly
+    if (typeof syncCurrentTopic === 'function') syncCurrentTopic();
+  } catch (err) {
+    showToast('حدث خطأ أثناء الحذف: ' + err.message, 'error');
   }
 };
 

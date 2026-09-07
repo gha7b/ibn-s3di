@@ -290,16 +290,17 @@ async function generateRadioBroadcast() {
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const prompt = `أنت مسؤول الإذاعة المدرسية في ثانوية ابن سعدي.
-اكتب إذاعة مدرسية ممتازة ومبتكرة جداً حول موضوع: "${topic}".
-الفقرات المطلوبة (5 فقرات):
-1. المقدمة والترحيب
-2. كلمة الصباح
-3. حديث شريف
-4. رسالة للطلاب / شعر
-5. الخاتمة
+  const prompt = `أنت خبير إعداد إذاعات مدرسية تربوية لثانوية ابن سعدي.
+قم بكتابة إذاعة مدرسية إبداعية ومبتكرة بالكامل ومخصصة تحديداً لموضوع: "${topic}".
 
-أرجع النتيجة بصيغة JSON حصرية كالآتي:
+تعليمات صياغة الفقرات الخمس:
+1. المقدمة والترحيب: مقدمة بلاغية ملهمة ومبتكرة تشيد بأهمية موضوع اليوم بلا عبارات قالبية مكررة.
+2. كلمة الصباح: كلمة تربوية عميقة تشرح أثر موضوع اليوم في حياة الطالب والمجتمع المدرسي.
+3. حديث شريف: حديث نبوي شريف صحيح وموثق صراحة بالراوي والمصدر (مثل: رواه البخاري / رواه مسلم / رواه الترمذي).
+4. رسالة للطلاب / شعر: أبيات شعرية عربية فصيحة وموزونة تخدم الموضوع مباشرة.
+5. الخاتمة: خاتمة راقية تدعو بالتوفيق لطلاب معلمي ثانوية ابن سعدي.
+
+أرجع JSON فقط حصراً بالصيغة التالية بدون أي نص خاري أو ماركداون:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"حديث شريف","content":"..."},{"title":"رسالة للطلاب / شعر","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
   const endpoints = [
@@ -312,6 +313,7 @@ async function generateRadioBroadcast() {
   for (const url of endpoints) {
     const modelName = url.split('/models/')[1].split(':')[0];
     try {
+      console.log(`🤖 Sending request to Gemini API model: ${modelName}...`);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,25 +322,37 @@ async function generateRadioBroadcast() {
           generationConfig: { temperature: 0.8, responseMimeType: "application/json" }
         })
       });
+
       const data = await response.json();
+
+      if (!response.ok || data.error) {
+        console.error(`❌ Gemini API Error (${modelName}):`, JSON.stringify(data.error || data));
+        continue;
+      }
+
       if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
         const text = data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(text);
         if (parsed.sections && Array.isArray(parsed.sections)) {
           sections = parsed.sections;
-          console.log(`✅ Gemini API generation succeeded using ${modelName}`);
+          console.log(`✅ Gemini API successfully generated broadcast using ${modelName}`);
           break;
         }
       }
     } catch (e) {
-      console.warn(`⚠️ ${modelName} call failed:`, e.message);
+      console.error(`❌ Network / Exception on Gemini API (${modelName}):`, e.message);
     }
   }
 
-  // Dynamic fallback generator if Gemini API key quota is reached
   if (!sections) {
-    console.log("ℹ️ Generating dynamic broadcast tailored to topic.");
-    sections = generateDynamicBroadcastSections(topic);
+    console.error("❌ ERROR: Failed to generate broadcast from all Gemini API endpoints. Please check GEMINI_API_KEY quota or network connection.");
+    sections = [
+      { title: "المقدمة والترحيب", content: `بسم الله الرحمن الرحيم. يطيب لنا في ثانوية ابن سعدي تقديم الإذاعة المدرسية حول: ${topic}` },
+      { title: "كلمة الصباح", content: `تعد قيمة ${topic} ركيزة أساسية في بناء بيئتنا المدرسية والتعليمية.` },
+      { title: "حديث شريف", content: `عن أبي هريرة رضي الله عنه أن رسول الله ﷺ قال: «إنَّما بُعِثْتُ لأُتَمِّمَ صَالِحَ الأخْلَاقِ» (رواه أحمد).` },
+      { title: "رسالة للطلاب / شعر", content: `قُم لِلمُعَلِّمِ وَوَفِّهِ التَبجيلا ... كادَ المُعَلِّمُ أَن يَكونَ رَسولا` },
+      { title: "الخاتمة", content: `نسأل الله التوفيق والنجاح لجميع الطلاب والكادر التعليمي.` }
+    ];
   }
 
   // Never use "Gemini" or "AI"

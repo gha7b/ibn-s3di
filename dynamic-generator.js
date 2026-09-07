@@ -45,3 +45,6 @@ function generateDynamicBroadcastSections(topic) {
     { title: "الخاتمة", content: getRandom(outroVariations) }
   ];
 }
+
+module.exports = { generateDynamicBroadcastSections };
+

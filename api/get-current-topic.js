@@ -1,6 +1,6 @@
 /**
  * Vercel Serverless Function: GET /api/get-current-topic
- * Reads weeklyTopic and approvedBroadcast from Firebase Realtime DB via REST API.
+ * Reads settings/topic (Single Source of Truth) and approvedBroadcast from Firebase.
  */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,22 +10,21 @@ export default async function handler(req, res) {
   const DB_URL = process.env.FIREBASE_DB_URL || 'https://abns3di-default-rtdb.europe-west1.firebasedatabase.app';
 
   try {
-    const [settingsRes, broadcastRes] = await Promise.all([
+    const [topicRes, broadcastRes] = await Promise.all([
       fetch(`${DB_URL}/settings/topic.json`),
       fetch(`${DB_URL}/approvedBroadcast.json`)
     ]);
 
-    const weeklyTopic = await settingsRes.json();
+    const topicData = await topicRes.json();
     const approvedBroadcast = await broadcastRes.json();
 
-    const currentTopic = (approvedBroadcast && approvedBroadcast.topic)
-      ? approvedBroadcast.topic
-      : (weeklyTopic || 'احترام المعلم والانضباط المدرسي');
+    const topic = (typeof topicData === 'string' && topicData.trim())
+      ? topicData.trim()
+      : (approvedBroadcast?.topic || 'احترام المعلم والانضباط المدرسي');
 
     return res.status(200).json({
       success: true,
-      topic: currentTopic,
-      weeklyTopic: weeklyTopic || 'احترام المعلم والانضباط المدرسي',
+      topic,
       approvedBroadcast: approvedBroadcast || null
     });
   } catch (err) {

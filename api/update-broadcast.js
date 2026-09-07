@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
   try {
     const broadcastData = {
-      class: cls || 'ذكاء اصطناعي (Gemini Bot)',
+      class: cls || 'فصل غير محدد',   // Never use Gemini/AI as class name
       date: date || new Date().toLocaleDateString('ar-SA'),
       status: status,
       topic: topic || '',
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       timestamp: timestamp || Date.now()
     };
 
-    // Save to the radios collection (shared with frontend admin panel)
+    // Save to the radios collection
     const saveRes = await fetch(`${DB_URL}/radios/${id}.json`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -40,9 +40,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: `Firebase error: ${err}` });
     }
 
-    // If approved, also write to approvedBroadcast for quick front-end access
+    // If approved: clear previous approvedBroadcast and set the new one
     if (status === 'approved') {
-      // First, set all other radios back to pending
+      // 1. Reset all other approved broadcasts back to pending
       const allRes = await fetch(`${DB_URL}/radios.json`);
       if (allRes.ok) {
         const allRadios = await allRes.json();
@@ -63,14 +63,14 @@ export default async function handler(req, res) {
         }
       }
 
-      // Write the approved broadcast to a dedicated node for instant frontend access
+      // 2. Overwrite approvedBroadcast node — frontend reads this for immediate display
       await fetch(`${DB_URL}/approvedBroadcast.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...broadcastData, id })
       });
 
-      // Also update topic in settings from approved broadcast's topic
+      // 3. Update settings/topic to match approved broadcast topic
       if (topic) {
         await fetch(`${DB_URL}/settings/topic.json`, {
           method: 'PUT',

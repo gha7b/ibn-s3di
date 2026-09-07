@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const cron = require('node-cron');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 
 // ═══════════════════════════════════════════════════════
 // CONFIGURATION
@@ -19,8 +19,8 @@ if (!TELEGRAM_BOT_TOKEN || !ADMIN_CHAT_ID) {
   process.exit(1);
 }
 
-// Initialize Google Generative AI SDK
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+// Initialize GoogleGenAI SDK (@google/genai)
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 // ═══════════════════════════════════════════════════════
 // FIREBASE REST HELPERS
@@ -296,28 +296,32 @@ async function generateRadioBroadcast() {
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"حديث شريف","content":"..."},{"title":"رسالة للطلاب / شعر","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  if (!genAI) {
+  if (!ai) {
     const errorMsg = "فشل التوليد من Gemini API: GEMINI_API_KEY غير موجود في متغيرات البيئة (.env)";
     console.error(`❌ ${errorMsg}`);
     await safeSendMessage(ADMIN_CHAT_ID, `❌ ${errorMsg}`);
     return;
   }
 
-  // Official supported models list
-  const modelNames = ['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'];
+  // Official supported models list for @google/genai
+  const modelNames = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-pro'];
   let sections = null;
   let lastError = null;
 
   for (const mName of modelNames) {
     try {
-      console.log(`🤖 Calling Gemini API via official SDK model: ${mName}...`);
-      const model = genAI.getGenerativeModel({
+      console.log(`🤖 Calling Gemini API via @google/genai SDK model: ${mName}...`);
+
+      const response = await ai.models.generateContent({
         model: mName,
-        generationConfig: { responseMimeType: "application/json", temperature: 0.8 }
+        contents: promptText,
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.8
+        }
       });
 
-      const result = await model.generateContent(promptText);
-      const responseText = result.response.text();
+      const responseText = response.text;
 
       if (responseText) {
         const parsed = JSON.parse(responseText);

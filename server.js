@@ -1,6 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const cron = require('node-cron');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // ═══════════════════════════════════════════════════════
 // CONFIGURATION
@@ -17,6 +18,9 @@ if (!TELEGRAM_BOT_TOKEN || !ADMIN_CHAT_ID) {
   console.error("❌ ERROR: TELEGRAM_BOT_TOKEN and ADMIN_CHAT_ID must be in .env");
   process.exit(1);
 }
+
+// Initialize Google Generative AI SDK
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // ═══════════════════════════════════════════════════════
 // FIREBASE REST HELPERS
@@ -57,7 +61,7 @@ async function fbDelete(path) {
 async function getWeeklyTopic() {
   try {
     const topic = await fbGet('settings/topic');
-    return topic || 'احترام المعلم والانضباط المدرسي';
+    return (typeof topic === 'string' && topic.trim()) ? topic.trim() : 'احترام المعلم والانضباط المدرسي';
   } catch (e) {
     return 'احترام المعلم والانضباط المدرسي';
   }
@@ -77,7 +81,7 @@ async function setWeeklyTopic(topic) {
 }
 
 // ═══════════════════════════════════════════════════════
-// RESPONSIBLE CLASS — reads from Firebase schedule/{dayIndex}
+// RESPONSIBLE CLASS
 // ═══════════════════════════════════════════════════════
 async function getResponsibleClass() {
   try {
@@ -85,7 +89,7 @@ async function getResponsibleClass() {
     if (!schedule || typeof schedule !== 'object') return null;
 
     const riyad = new Date().toLocaleString('en-US', { timeZone: 'Asia/Riyadh' });
-    const dayIndex = new Date(riyad).getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const dayIndex = new Date(riyad).getDay();
 
     const dayEntry = schedule[dayIndex];
     if (dayEntry && dayEntry.class && dayEntry.class.trim()) {
@@ -99,7 +103,7 @@ async function getResponsibleClass() {
 }
 
 // ═══════════════════════════════════════════════════════
-// AUTO-CLEANUP: Delete pending broadcasts older than 24h
+// AUTO-CLEANUP
 // ═══════════════════════════════════════════════════════
 async function autoCleanupOldBroadcasts() {
   try {
@@ -155,7 +159,6 @@ async function saveBroadcastToFirebase(broadcastId, broadcastData, status) {
     }
   }
 
-  // Notify Vercel API Route
   try {
     await fetch(`${SITE_URL}/api/update-broadcast`, {
       method: 'POST',
@@ -192,7 +195,7 @@ bot.onText(/\/start/, (msg) => {
     "👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\n" +
     "الأوامر المتاحة:\n" +
     "- `/set_topic` — تغيير موضوع/قيمة الأسبوع\n" +
-    "- `/generate` — توليد إذاعة جديدة مبتكرة وإرسالها للاعتماد\n" +
+    "- `/generate` — توليد إذاعة جديدة مبتكرة عبر Gemini API وإرسالها للاعتماد\n" +
     "- `/cleanup` — حذف الإذاعات المعلقة القديمة يدوياً",
     { parse_mode: 'Markdown' }
   );
@@ -208,7 +211,7 @@ bot.onText(/\/set_topic/, (msg) => {
 bot.onText(/\/generate/, (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
-  safeSendMessage(chatId, "⏳ جاري توليد الإذاعة الذكية عبر الذكاء الاصطناعي...");
+  safeSendMessage(chatId, "⏳ جاري توليد الإذاعة الذكية عبر Gemini API...");
   generateRadioBroadcast();
 });
 
@@ -278,10 +281,8 @@ bot.on('callback_query', async (query) => {
 });
 
 // ═══════════════════════════════════════════════════════
-// DYNAMIC GENERATION VIA GEMINI & BACKUP GENERATOR
+// PURE GEMINI API GENERATION (NO STATIC TEMPLATES)
 // ═══════════════════════════════════════════════════════
-const { generateDynamicBroadcastSections } = require('./dynamic-generator');
-
 async function generateRadioBroadcast() {
   await autoCleanupOldBroadcasts();
 
@@ -290,72 +291,57 @@ async function generateRadioBroadcast() {
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const prompt = `أنت خبير إعداد إذاعات مدرسية تربوية لثانوية ابن سعدي.
-قم بكتابة إذاعة مدرسية إبداعية ومبتكرة بالكامل ومخصصة تحديداً لموضوع: "${topic}".
+  const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس: (مقدمة وترحيب، كلمة الصباح، حديث شريف صحيح وموثوق يخدم الموضوع مع الراوي والمصدر، أبيات شعرية عربية حقيقية عن الموضوع، وخاتمة). يمنع تكرار القوالب الجاهزة.
 
-تعليمات صياغة الفقرات الخمس:
-1. المقدمة والترحيب: مقدمة بلاغية ملهمة ومبتكرة تشيد بأهمية موضوع اليوم بلا عبارات قالبية مكررة.
-2. كلمة الصباح: كلمة تربوية عميقة تشرح أثر موضوع اليوم في حياة الطالب والمجتمع المدرسي.
-3. حديث شريف: حديث نبوي شريف صحيح وموثق صراحة بالراوي والمصدر (مثل: رواه البخاري / رواه مسلم / رواه الترمذي).
-4. رسالة للطلاب / شعر: أبيات شعرية عربية فصيحة وموزونة تخدم الموضوع مباشرة.
-5. الخاتمة: خاتمة راقية تدعو بالتوفيق لطلاب معلمي ثانوية ابن سعدي.
-
-أرجع JSON فقط حصراً بالصيغة التالية بدون أي نص خاري أو ماركداون:
+أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"حديث شريف","content":"..."},{"title":"رسالة للطلاب / شعر","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  const endpoints = [
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`,
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`
-  ];
+  if (!genAI) {
+    const errorMsg = "فشل التوليد من Gemini API: GEMINI_API_KEY غير موجود في متغيرات البيئة (.env)";
+    console.error(`❌ ${errorMsg}`);
+    await safeSendMessage(ADMIN_CHAT_ID, `❌ ${errorMsg}`);
+    return;
+  }
 
+  // Model fallback list
+  const modelNames = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
   let sections = null;
-  for (const url of endpoints) {
-    const modelName = url.split('/models/')[1].split(':')[0];
+  let lastError = null;
+
+  for (const mName of modelNames) {
     try {
-      console.log(`🤖 Sending request to Gemini API model: ${modelName}...`);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.8, responseMimeType: "application/json" }
-        })
+      console.log(`🤖 Calling Gemini API via official SDK model: ${mName}...`);
+      const model = genAI.getGenerativeModel({
+        model: mName,
+        generationConfig: { responseMimeType: "application/json", temperature: 0.8 }
       });
 
-      const data = await response.json();
+      const result = await model.generateContent(promptText);
+      const responseText = result.response.text();
 
-      if (!response.ok || data.error) {
-        console.error(`❌ Gemini API Error (${modelName}):`, JSON.stringify(data.error || data));
-        continue;
-      }
-
-      if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        const text = data.candidates[0].content.parts[0].text;
-        const parsed = JSON.parse(text);
+      if (responseText) {
+        const parsed = JSON.parse(responseText);
         if (parsed.sections && Array.isArray(parsed.sections)) {
           sections = parsed.sections;
-          console.log(`✅ Gemini API successfully generated broadcast using ${modelName}`);
+          console.log(`✅ Gemini API generation succeeded using model: ${mName}`);
           break;
         }
       }
-    } catch (e) {
-      console.error(`❌ Network / Exception on Gemini API (${modelName}):`, e.message);
+    } catch (err) {
+      lastError = err;
+      console.error(`❌ Gemini API Call Error (${mName}):`, err.message || err);
     }
   }
 
+  // STRICT REQUIREMENT: If Gemini API fails, report explicit error without fallbacks
   if (!sections) {
-    console.error("❌ ERROR: Failed to generate broadcast from all Gemini API endpoints. Please check GEMINI_API_KEY quota or network connection.");
-    sections = [
-      { title: "المقدمة والترحيب", content: `بسم الله الرحمن الرحيم. يطيب لنا في ثانوية ابن سعدي تقديم الإذاعة المدرسية حول: ${topic}` },
-      { title: "كلمة الصباح", content: `تعد قيمة ${topic} ركيزة أساسية في بناء بيئتنا المدرسية والتعليمية.` },
-      { title: "حديث شريف", content: `عن أبي هريرة رضي الله عنه أن رسول الله ﷺ قال: «إنَّما بُعِثْتُ لأُتَمِّمَ صَالِحَ الأخْلَاقِ» (رواه أحمد).` },
-      { title: "رسالة للطلاب / شعر", content: `قُم لِلمُعَلِّمِ وَوَفِّهِ التَبجيلا ... كادَ المُعَلِّمُ أَن يَكونَ رَسولا` },
-      { title: "الخاتمة", content: `نسأل الله التوفيق والنجاح لجميع الطلاب والكادر التعليمي.` }
-    ];
+    const apiErrDetail = lastError ? (lastError.message || JSON.stringify(lastError)) : "Unknown Error";
+    const explicitErrorMsg = `فشل التوليد من Gemini API: [${apiErrDetail}]`;
+    console.error(`❌ CRITICAL: ${explicitErrorMsg}`);
+    await safeSendMessage(ADMIN_CHAT_ID, `❌ ${explicitErrorMsg}`);
+    return;
   }
 
-  // Never use "Gemini" or "AI"
   const classLabel = responsibleClass || 'فصل غير محدد';
 
   const slides = sections.map(sec => ({
@@ -405,4 +391,4 @@ cron.schedule('0 0 * * *', () => {
   autoCleanupOldBroadcasts();
 }, { timezone: "Asia/Riyadh" });
 
-console.log("🤖 Telegram Bot started successfully.");
+console.log("🤖 Telegram Bot started successfully with @google/generative-ai SDK.");

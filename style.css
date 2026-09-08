@@ -161,7 +161,7 @@ body.light #mouseGlow {
 .app-header {
   position: sticky;
   top: 0;
-  z-index: 200;
+  z-index: 50;
   width: 100%;
   margin: 0;
   display: flex;
@@ -169,7 +169,7 @@ body.light #mouseGlow {
   justify-content: space-between;
   gap: 20px;
   padding: 14px 32px;
-  background: rgba(5,14,31,0.88);
+  background: rgba(5,14,31,0.92);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
   border-bottom: 1px solid var(--border);

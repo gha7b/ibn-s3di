@@ -979,28 +979,78 @@ function renderAdminRadios() {
   populateAttendanceRadios();
 }
 
-window.approveR = function(id) {
+window.approveR = async function(id) {
   const r = S.radios.find(x => x.id === id);
   if (!r) return;
 
   const isLocal = window.location.origin.includes('5500') || window.location.origin.includes('5501') || window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:';
   const backendUrl = isLocal ? 'http://localhost:3000' : '';
 
-  fetch(backendUrl + '/api/broadcasts/approve/' + id, {
-    method: 'POST'
-  }).then(res => res.json()).then(data => {
-    S.radios.forEach(x => { x.status = (x.id === id) ? 'approved' : 'pending'; });
+  try {
+    // 1. Direct Firebase Realtime DB update if client SDK is available
+    if (window.db) {
+      const allRes = await window.db.ref('radios').once('value');
+      const allRadios = allRes.val();
+      if (allRadios && typeof allRadios === 'object') {
+        const updates = {};
+        Object.keys(allRadios).forEach(key => {
+          if (key !== id && (allRadios[key].status === 'approved' || allRadios[key].approved)) {
+            updates['radios/' + key + '/status'] = 'pending';
+            updates['radios/' + key + '/approved'] = false;
+          }
+        });
+        if (Object.keys(updates).length > 0) {
+          await window.db.ref().update(updates);
+        }
+      }
+
+      const updatedRadio = { ...r, status: 'approved', approved: true };
+      await window.db.ref('radios/' + id).set(updatedRadio);
+      await window.db.ref('approvedBroadcast').set({ ...updatedRadio, id });
+      if (r.topic) {
+        await window.db.ref('settings/topic').set(r.topic);
+      }
+    }
+
+    // 2. Serverless API call to Vercel route
+    const res = await fetch(backendUrl + '/api/update-broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: r.id,
+        status: 'approved',
+        approved: true,
+        topic: r.topic,
+        slides: r.slides,
+        class: r.class,
+        date: r.date,
+        timestamp: r.timestamp
+      })
+    });
+    const data = await res.json();
+
+    // 3. Update local state & UI
+    S.radios.forEach(x => {
+      if (x.id === id) {
+        x.status = 'approved';
+        x.approved = true;
+      } else if (x.status === 'approved' || x.approved) {
+        x.status = 'pending';
+        x.approved = false;
+      }
+    });
+
     if (data && data.broadcast) {
       const idx = S.radios.findIndex(x => x.id === id);
       if (idx !== -1) S.radios[idx] = data.broadcast;
     }
+
     renderAdminRadios();
-    showToast('تم اعتماد الإذاعة بنجاح', 'success');
-  }).catch(() => {
-    S.radios.forEach(x => { if (x.id === id) x.status = 'approved'; });
-    renderAdminRadios();
-    showToast('تم اعتماد الإذاعة بنجاح', 'success');
-  });
+    showToast('تم اعتماد الإذاعة ونشرها بنجاح', 'success');
+    if (typeof syncCurrentTopic === 'function') syncCurrentTopic();
+  } catch (err) {
+    showToast('حدث خطأ أثناء الاعتماد: ' + err.message, 'error');
+  }
 };
 
 window.deleteR = async function(id) {

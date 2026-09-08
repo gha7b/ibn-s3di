@@ -2,12 +2,13 @@
  * Vercel Serverless Function: POST /api/update-broadcast
  * Saves/updates a broadcast in Firebase Realtime DB.
  * Supports status: 'pending' | 'approved'
- * Called by the Telegram bot when generating or approving a broadcast.
+ * Called by the website frontend or Telegram bot when approving or updating a broadcast.
  */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method Not Allowed' });
 
@@ -19,16 +20,30 @@ export default async function handler(req, res) {
   const DB_URL = process.env.FIREBASE_DB_URL || 'https://abns3di-default-rtdb.europe-west1.firebasedatabase.app';
 
   try {
+    // 1. Fetch existing broadcast if available to avoid losing slides or topic on partial update
+    let existing = {};
+    try {
+      const exRes = await fetch(`${DB_URL}/radios/${id}.json`);
+      if (exRes.ok) {
+        existing = (await exRes.json()) || {};
+      }
+    } catch (e) {
+      // Ignore fallback if missing
+    }
+
+    const isApproved = status === 'approved';
     const broadcastData = {
-      class: cls || 'فصل غير محدد',   // Never use Gemini/AI as class name
-      date: date || new Date().toLocaleDateString('ar-SA'),
+      ...existing,
+      class: cls || existing.class || 'فصل غير محدد',
+      date: date || existing.date || new Date().toLocaleDateString('ar-SA'),
       status: status,
-      topic: topic || '',
-      slides: slides || [],
-      timestamp: timestamp || Date.now()
+      approved: isApproved,
+      topic: topic || existing.topic || '',
+      slides: slides || existing.slides || [],
+      timestamp: timestamp || existing.timestamp || Date.now()
     };
 
-    // Save to the radios collection
+    // 2. Save to radios collection
     const saveRes = await fetch(`${DB_URL}/radios/${id}.json`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -40,17 +55,18 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: `Firebase error: ${err}` });
     }
 
-    // If approved: clear previous approvedBroadcast and set the new one
-    if (status === 'approved') {
-      // 1. Reset all other approved broadcasts back to pending
+    // 3. If approved: update approvedBroadcast node and weekly topic in Firebase DB
+    if (isApproved) {
+      // Reset all other approved broadcasts back to pending
       const allRes = await fetch(`${DB_URL}/radios.json`);
       if (allRes.ok) {
         const allRadios = await allRes.json();
         if (allRadios && typeof allRadios === 'object') {
           const resetUpdates = {};
           Object.keys(allRadios).forEach(key => {
-            if (key !== id && allRadios[key].status === 'approved') {
-              resetUpdates[`/radios/${key}/status`] = 'pending';
+            if (key !== id && (allRadios[key].status === 'approved' || allRadios[key].approved === true)) {
+              resetUpdates[`radios/${key}/status`] = 'pending';
+              resetUpdates[`radios/${key}/approved`] = false;
             }
           });
           if (Object.keys(resetUpdates).length > 0) {
@@ -63,19 +79,19 @@ export default async function handler(req, res) {
         }
       }
 
-      // 2. Overwrite approvedBroadcast node — frontend reads this for immediate display
+      // Overwrite approvedBroadcast node — frontend reads this for immediate display
       await fetch(`${DB_URL}/approvedBroadcast.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...broadcastData, id })
       });
 
-      // 3. Update settings/topic to match approved broadcast topic
-      if (topic) {
+      // Update settings/topic to match approved broadcast topic
+      if (broadcastData.topic) {
         await fetch(`${DB_URL}/settings/topic.json`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(topic)
+          body: JSON.stringify(broadcastData.topic)
         });
       }
     }
@@ -84,7 +100,9 @@ export default async function handler(req, res) {
       success: true,
       id,
       status,
-      message: status === 'approved'
+      approved: isApproved,
+      broadcast: broadcastData,
+      message: isApproved
         ? 'تم اعتماد الإذاعة ونشرها على الموقع فوراً'
         : 'تم حفظ الإذاعة بانتظار الاعتماد'
     });

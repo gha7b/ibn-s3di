@@ -4,6 +4,49 @@ const cron = require('node-cron');
 const { GoogleGenAI } = require('@google/genai');
 
 // ═══════════════════════════════════════════════════════
+// AUTH CODES REGISTRY
+// ═══════════════════════════════════════════════════════
+const AUTH_CODES = {
+  // 1ST GRADE AMBASSADORS
+  '1101': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-1' },
+  '1102': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-2' },
+  '1103': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-3' },
+  '1104': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-4' },
+  '1105': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-5' },
+  '1106': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-6' },
+
+  // 2ND GRADE AMBASSADORS
+  '2201': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-1' },
+  '2202': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-2' },
+  '2203': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-3' },
+  '2204': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-4' },
+  '2205': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-5' },
+  '2206': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-6' },
+
+  // 3RD GRADE AMBASSADORS
+  '3301': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-1' },
+  '3302': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-2' },
+  '3303': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-3' },
+  '3304': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-4' },
+  '3305': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-5' },
+  '3306': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-6' },
+
+  // SUPERVISORS
+  '9901': { role: 'supervisor', grade: 1, gradeName: 'أول ثانوي', gradeScope: 'المرحلة الأولى (أول ثانوي)' },
+  '9902': { role: 'supervisor', grade: 2, gradeName: 'ثاني ثانوي', gradeScope: 'المرحلة الثانية (ثاني ثانوي)' },
+  '9903': { role: 'supervisor', grade: 3, gradeName: 'ثالث ثانوي', gradeScope: 'المرحلة الثالثة (ثالث ثانوي)' }
+};
+
+function validateAuthCode(code, selectedRole) {
+  if (!code || typeof code !== 'string') return null;
+  const trimmedCode = code.trim();
+  const entry = AUTH_CODES[trimmedCode];
+  if (!entry) return null;
+  if (selectedRole && entry.role !== selectedRole) return null;
+  return entry;
+}
+
+// ═══════════════════════════════════════════════════════
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════
 const {
@@ -56,7 +99,44 @@ async function fbDelete(path) {
 }
 
 // ═══════════════════════════════════════════════════════
-// TOPIC MANAGEMENT
+// USER AUTH & ROLE HELPERS
+// ═══════════════════════════════════════════════════════
+async function getUserProfile(chatId) {
+  if (isAdmin(chatId)) {
+    return {
+      telegramId: String(chatId),
+      role: 'admin',
+      gradeName: 'إدارة المنصة',
+      title: 'مدير النظام'
+    };
+  }
+  try {
+    const user = await fbGet(`users/${chatId}`);
+    return (user && typeof user === 'object') ? user : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function findSupervisorForGrade(grade) {
+  try {
+    const allUsers = await fbGet('users');
+    if (allUsers && typeof allUsers === 'object') {
+      for (const uid of Object.keys(allUsers)) {
+        const u = allUsers[uid];
+        if (u.role === 'supervisor' && Number(u.grade) === Number(grade)) {
+          return u.telegramId;
+        }
+      }
+    }
+  } catch (e) {
+    // Fallback
+  }
+  return ADMIN_CHAT_ID;
+}
+
+// ═══════════════════════════════════════════════════════
+// TOPIC & BROADCAST HELPERS
 // ═══════════════════════════════════════════════════════
 async function getWeeklyTopic() {
   try {
@@ -69,20 +149,8 @@ async function getWeeklyTopic() {
 
 async function setWeeklyTopic(topic) {
   await fbSet('settings/topic', topic);
-  try {
-    await fetch(`${SITE_URL}/api/set-topic`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic })
-    });
-  } catch (e) {
-    // Vercel fallback
-  }
 }
 
-// ═══════════════════════════════════════════════════════
-// RESPONSIBLE CLASS
-// ═══════════════════════════════════════════════════════
 async function getResponsibleClass() {
   try {
     const schedule = await fbGet('schedule');
@@ -102,9 +170,6 @@ async function getResponsibleClass() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// AUTO-CLEANUP
-// ═══════════════════════════════════════════════════════
 async function autoCleanupOldBroadcasts() {
   try {
     const allRadios = await fbGet('radios');
@@ -132,19 +197,24 @@ async function autoCleanupOldBroadcasts() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// BROADCAST MANAGEMENT
-// ═══════════════════════════════════════════════════════
 async function saveBroadcastToFirebase(broadcastId, broadcastData, status) {
-  await fbSet(`radios/${broadcastId}`, { ...broadcastData, status });
+  const isApproved = status === 'approved';
+  const dataToSave = {
+    ...broadcastData,
+    status,
+    approved: isApproved
+  };
 
-  if (status === 'approved') {
+  await fbSet(`radios/${broadcastId}`, dataToSave);
+
+  if (isApproved) {
     const allRadios = await fbGet('radios');
     if (allRadios && typeof allRadios === 'object') {
       const resetUpdates = {};
       Object.keys(allRadios).forEach(key => {
         if (key !== broadcastId && allRadios[key].status === 'approved') {
           resetUpdates[`radios/${key}/status`] = 'pending';
+          resetUpdates[`radios/${key}/approved`] = false;
         }
       });
       if (Object.keys(resetUpdates).length > 0) {
@@ -152,29 +222,29 @@ async function saveBroadcastToFirebase(broadcastId, broadcastData, status) {
       }
     }
 
-    await fbSet('approvedBroadcast', { ...broadcastData, id: broadcastId, status: 'approved' });
+    await fbSet('approvedBroadcast', { ...dataToSave, id: broadcastId });
 
     if (broadcastData.topic) {
       await fbSet('settings/topic', broadcastData.topic);
     }
   }
+}
 
-  try {
-    await fetch(`${SITE_URL}/api/update-broadcast`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: broadcastId, ...broadcastData, status })
-    });
-  } catch (e) {
-    // Vercel fallback
-  }
+function buildBroadcastMessageText(topic, classLabel, dateStr, slides) {
+  const icons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
+  let msgText = `📌 *الموضوع:* ${topic}\n`;
+  msgText += `🏫 *الفصل المسؤول:* ${classLabel}\n`;
+  msgText += `📅 *التاريخ:* ${dateStr}\n\n`;
+  slides.forEach((sec, i) => {
+    msgText += `${icons[i]} *${sec.title}:*\n${sec.content}\n\n`;
+  });
+  return msgText;
 }
 
 // ═══════════════════════════════════════════════════════
 // TELEGRAM BOT
 // ═══════════════════════════════════════════════════════
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-const userState = {};
 
 async function safeSendMessage(chatId, text, options = {}) {
   try {
@@ -189,35 +259,83 @@ function isAdmin(chatId) {
 }
 
 // Commands
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-  safeSendMessage(chatId,
-    "👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\n" +
-    "الأوامر المتاحة:\n" +
-    "- `/set_topic` — تغيير موضوع/قيمة الأسبوع\n" +
-    "- `/generate` — توليد إذاعة جديدة مبتكرة عبر Gemini API وإرسالها للاعتماد\n" +
-    "- `/cleanup` — حذف الإذاعات المعلقة القديمة يدوياً",
-    { parse_mode: 'Markdown' }
-  );
+  const user = await getUserProfile(chatId);
+
+  if (user) {
+    let userRoleDesc = '';
+    if (user.role === 'admin') userRoleDesc = '👑 مدير النظام الرئيسي';
+    else if (user.role === 'ambassador') userRoleDesc = `🎓 سفير فصل (${user.className}) — ${user.gradeName}`;
+    else if (user.role === 'supervisor') userRoleDesc = `👔 مشرف ${user.gradeScope || user.gradeName}`;
+
+    safeSendMessage(chatId,
+      `👋 *أهلاً بك مجدداً في منصة الإذاعة المدرسية الذكية*\n` +
+      `الصفة: ${userRoleDesc}\n\n` +
+      `📋 *الأوامر المتاحة لك:*\n` +
+      `- \`/generate\` — توليد إذاعة مدرسية ذكية عبر Gemini API\n` +
+      (user.role === 'admin' || user.role === 'supervisor' ? `- \`/set_topic\` — تغيير موضوع/قيمة الأسبوع\n` : '') +
+      `- \`/my_profile\` — عرض بيانات حسابك وصلاحياتك\n` +
+      `- \`/cleanup\` — تنظيف الإذاعات المعلقة`,
+      { parse_mode: 'Markdown' }
+    );
+  } else {
+    safeSendMessage(chatId,
+      `👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\n` +
+      `لتفعيل حسابك والبدء في الاستخدام، يرجى اختيار نوع التسجيل:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🎓 تسجيل كـ سفير فصل", callback_data: "login_type:ambassador" }],
+            [{ text: "👔 تسجيل كـ مشرف مرحلة", callback_data: "login_type:supervisor" }]
+          ]
+        }
+      }
+    );
+  }
 });
 
-bot.onText(/\/set_topic/, (msg) => {
+bot.onText(/\/my_profile/, async (msg) => {
   const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
-  userState[chatId] = 'WAITING_FOR_TOPIC';
+  const user = await getUserProfile(chatId);
+  if (!user) {
+    return safeSendMessage(chatId, "⚠️ أنت غير مسجل بعد. أرسل /start لتسجيل الدخول.");
+  }
+  let profileMsg = `👤 *بيانات حسابك:*\n`;
+  profileMsg += `🆔 *المعرف:* ${chatId}\n`;
+  profileMsg += `🏷 *الدور:* ${user.role === 'admin' ? 'مدير عام' : user.role === 'ambassador' ? 'سفير فصل' : 'مشرف مرحلة'}\n`;
+  if (user.className) profileMsg += `🏫 *الفصل:* ${user.className}\n`;
+  if (user.gradeName) profileMsg += `📚 *المرحلة:* ${user.gradeName}\n`;
+  safeSendMessage(chatId, profileMsg, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/set_topic/, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = await getUserProfile(chatId);
+  if (!user || (user.role !== 'admin' && user.role !== 'supervisor')) {
+    return safeSendMessage(chatId, "⚠️ تغيير موضوع الأسبوع مخصص للمشرفين وإدارة المنصة فقط.");
+  }
+  await fbSet(`userState/${chatId}`, { step: 'WAITING_FOR_TOPIC' });
   safeSendMessage(chatId, "✏️ اكتب موضوع/قيمة الأسبوع الجديدة:");
 });
 
-bot.onText(/\/generate/, (msg) => {
+bot.onText(/\/generate/, async (msg) => {
   const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
-  safeSendMessage(chatId, "⏳ جاري توليد الإذاعة الذكية عبر Gemini API...");
-  generateRadioBroadcast();
+  const user = await getUserProfile(chatId);
+  if (!user) {
+    return safeSendMessage(chatId, "⚠️ عذراً، يجب عليك تسجيل الدخول أولاً باستخدام /start.");
+  }
+  safeSendMessage(chatId, `⏳ جاري توليد الإذاعة الذكية عبر Gemini API (5 فقرات) ${user.className ? `لفصل ${user.className}` : ''}...`);
+  generateRadioBroadcast(user);
 });
 
 bot.onText(/\/cleanup/, async (msg) => {
   const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return safeSendMessage(chatId, "⚠️ غير مصرح.");
+  const user = await getUserProfile(chatId);
+  if (!user || (user.role !== 'admin' && user.role !== 'supervisor')) {
+    return safeSendMessage(chatId, "⚠️ غير مصرح.");
+  }
   safeSendMessage(chatId, "🗑️ جاري حذف الإذاعات المعلقة القديمة...");
   try {
     await autoCleanupOldBroadcasts();
@@ -231,30 +349,163 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   if (!msg.text || msg.text.startsWith('/')) return;
 
-  if (userState[chatId] === 'WAITING_FOR_TOPIC' && isAdmin(chatId)) {
-    const newTopic = msg.text.trim();
-    delete userState[chatId];
+  const userState = await fbGet(`userState/${chatId}`);
+  if (!userState || typeof userState !== 'object') return;
 
-    try {
-      await setWeeklyTopic(newTopic);
-      safeSendMessage(chatId,
-        `✅ تم تحديث موضوع الأسبوع بنجاح:\n"${newTopic}"\n\n` +
-        `🌐 سيظهر على الموقع فوراً: ${SITE_URL}`
+  // Code Registration
+  if (userState.step === 'AWAITING_CODE') {
+    const match = validateAuthCode(msg.text.trim(), userState.selectedRole);
+    if (!match) {
+      return safeSendMessage(chatId,
+        `❌ *كود غير صحيح!*\n\n` +
+        `الكود الإدخال (${msg.text.trim()}) غير صحيح أو لا يطابق الخيار المحدد.\n` +
+        `يرجى التأكد وإعادة كتابة الكود المكون من 4 أرقام:`,
+        { parse_mode: 'Markdown' }
       );
-    } catch (err) {
-      safeSendMessage(chatId, `❌ حدث خطأ: ${err.message}`);
+    }
+
+    const userProfile = {
+      telegramId: String(chatId),
+      role: match.role,
+      grade: match.grade,
+      gradeName: match.gradeName,
+      className: match.className || null,
+      gradeScope: match.gradeScope || null,
+      code: msg.text.trim(),
+      registeredAt: Date.now()
+    };
+
+    await fbSet(`users/${chatId}`, userProfile);
+    await fbDelete(`userState/${chatId}`);
+
+    let welcomeText = '';
+    if (match.role === 'ambassador') {
+      welcomeText = `🎉 *تم تسجيلك بنجاح كـ سفير فصل (${match.className}) — ${match.gradeName}!*\n\n` +
+        `يمكنك الآن إرسال الأمر /generate لتوليد إذاعة مدرسية جديدة مخصصة لفصلك.`;
+    } else {
+      welcomeText = `🎉 *تم تسجيلك بنجاح كـ مشرف ${match.gradeScope}!*\n\n` +
+        `يمكنك الآن استلام وإشراف واعتماد إذاعات فصول مرحلتك الدراسية.`;
+    }
+
+    return safeSendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
+  }
+
+  // Supervisor Edit Note Entry
+  if (userState.step === 'ENTER_EDIT_NOTE') {
+    const { broadcastId, secIndex } = userState;
+    const noteText = msg.text.trim();
+
+    await fbDelete(`userState/${chatId}`);
+
+    const broadcast = await fbGet(`radios/${broadcastId}`);
+    if (!broadcast || !broadcast.slides || !broadcast.slides[secIndex]) {
+      return safeSendMessage(chatId, "❌ حدث خطأ: الإذاعة أو الفقرة غير موجودة.");
+    }
+
+    const secTitle = broadcast.slides[secIndex].title;
+    const currentContent = broadcast.slides[secIndex].content;
+    const ambassadorId = broadcast.ambassadorId || ADMIN_CHAT_ID;
+
+    await fbSet(`userState/${ambassadorId}`, {
+      step: 'AMBASSADOR_REVISING_SECTION',
+      broadcastId,
+      secIndex
+    });
+
+    await safeSendMessage(ambassadorId,
+      `📌 *طلب تعديل فقرة من المشرف (فصل ${broadcast.class})*\n\n` +
+      `الفقرة المطلوب تعديلها: *(${secTitle})*\n` +
+      `📝 *ملاحظة المشرف:* "${noteText}"\n\n` +
+      `📄 *النص الحالي للفقرة:*\n${currentContent}\n\n` +
+      `✏️ *يرجى إرسال النص الجديد المعدل لهذه الفقرة الان:*`,
+      { parse_mode: 'Markdown' }
+    );
+
+    return safeSendMessage(chatId, `✅ تم إرسال طلب التعديل إلى سفير الفصل بنجاح. ستصلك الإذاعة فور تعديلها.`);
+  }
+
+  // Ambassador Submitting Revised Section Text
+  if (userState.step === 'AMBASSADOR_REVISING_SECTION') {
+    const { broadcastId, secIndex } = userState;
+    const newSectionText = msg.text.trim();
+
+    await fbDelete(`userState/${chatId}`);
+
+    const broadcast = await fbGet(`radios/${broadcastId}`);
+    if (!broadcast || !broadcast.slides || !broadcast.slides[secIndex]) {
+      return safeSendMessage(chatId, "❌ حدث خطأ: الإذاعة غير موجودة.");
+    }
+
+    broadcast.slides[secIndex].content = newSectionText;
+    await fbSet(`radios/${broadcastId}`, broadcast);
+
+    await safeSendMessage(chatId, `✅ *تم تحديث الفقرة بنجاح، وإعادة الإذاعة للمشرف للمراجعة والاعتماد!*`, { parse_mode: 'Markdown' });
+
+    const supervisorChatId = await findSupervisorForGrade(broadcast.grade || 1);
+    const contentBody = buildBroadcastMessageText(broadcast.topic, broadcast.class, broadcast.date, broadcast.slides);
+
+    const updatedSupervisorMsg = `🔄 *إذاعة معدلة بانتظار الاعتماد (فصل ${broadcast.class}):*\n\n` + contentBody;
+    const inlineButtons = {
+      inline_keyboard: [
+        [{ text: "✅ اعتماد ونشر الإذاعة", callback_data: `approve_broadcast:${broadcastId}` }],
+        [{ text: "✏️ طلب تعديل فقرة", callback_data: `request_edit:${broadcastId}` }]
+      ]
+    };
+
+    return safeSendMessage(supervisorChatId, updatedSupervisorMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: inlineButtons
+    });
+  }
+
+  // Topic Entry
+  if (userState.step === 'WAITING_FOR_TOPIC') {
+    const user = await getUserProfile(chatId);
+    if (user && (user.role === 'admin' || user.role === 'supervisor')) {
+      const newTopic = msg.text.trim();
+      await fbDelete(`userState/${chatId}`);
+
+      try {
+        await setWeeklyTopic(newTopic);
+        safeSendMessage(chatId,
+          `✅ تم تحديث موضوع الأسبوع بنجاح:\n"${newTopic}"\n\n` +
+          `🌐 سيظهر على الموقع فوراً: ${SITE_URL}`
+        );
+      } catch (err) {
+        safeSendMessage(chatId, `❌ حدث خطأ: ${err.message}`);
+      }
     }
   }
 });
 
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
-  if (!isAdmin(chatId)) {
-    return bot.answerCallbackQuery(query.id, { text: "⚠️ غير مصرح" }).catch(() => {});
+  const data = query.data || '';
+
+  if (data.startsWith('login_type:')) {
+    const selectedRole = data.split('login_type:')[1];
+    const roleTitle = selectedRole === 'ambassador' ? '🎓 سفير فصل' : '👔 مشرف مرحلة';
+
+    await fbSet(`userState/${chatId}`, {
+      step: 'AWAITING_CODE',
+      selectedRole: selectedRole
+    });
+
+    bot.answerCallbackQuery(query.id, { text: `اخترت: ${roleTitle}` }).catch(() => {});
+    return safeSendMessage(chatId,
+      `🔑 *إدخال كود التفعيل:*\n\n` +
+      `يرجى كتابة وإرسال كود التفعيل المكون من 4 أرقام المخصص لك كـ (${roleTitle}):`,
+      { parse_mode: 'Markdown' }
+    );
   }
 
-  if (query.data.startsWith('approve_broadcast:')) {
-    const broadcastId = query.data.split('approve_broadcast:')[1];
+  if (data.startsWith('approve_broadcast:')) {
+    const user = await getUserProfile(chatId);
+    if (!user || (user.role !== 'admin' && user.role !== 'supervisor')) {
+      return bot.answerCallbackQuery(query.id, { text: "⚠️ هذه الخاصية مخصصة للمشرفين والإدارة فقط." }).catch(() => {});
+    }
+
+    const broadcastId = data.split('approve_broadcast:')[1];
 
     try {
       bot.answerCallbackQuery(query.id, { text: "⏳ جاري الاعتماد..." }).catch(() => {});
@@ -262,6 +513,13 @@ bot.on('callback_query', async (query) => {
       const broadcast = await fbGet(`radios/${broadcastId}`);
       if (!broadcast) {
         return bot.answerCallbackQuery(query.id, { text: "❌ الإذاعة غير موجودة" }).catch(() => {});
+      }
+
+      if (user.role === 'supervisor') {
+        const broadcastGrade = Number(broadcast.grade || String(broadcast.class || '').slice(0, 1));
+        if (Number(user.grade) !== broadcastGrade) {
+          return safeSendMessage(chatId, `⚠️ يمكنك فقط اعتماد إذاعات مرحلتك الدراسية (المرحلة ${user.gradeName}).`);
+        }
       }
 
       await saveBroadcastToFirebase(broadcastId, broadcast, 'approved');
@@ -273,37 +531,112 @@ bot.on('callback_query', async (query) => {
         `🌐 الموقع: ${SITE_URL}`,
         { parse_mode: 'Markdown' }
       );
+
+      if (broadcast.ambassadorId) {
+        safeSendMessage(broadcast.ambassadorId,
+          `🎉 *تم اعتماد إذاعة فصلك (${broadcast.class}) بنجاح ونشرها على الموقع الرسمي!*\n` +
+          `🌐 يمكنك مشاهدتها الآن: ${SITE_URL}`,
+          { parse_mode: 'Markdown' }
+        );
+      }
     } catch (err) {
       bot.answerCallbackQuery(query.id, { text: "❌ خطأ في الاعتماد" }).catch(() => {});
       safeSendMessage(chatId, `❌ خطأ في الاعتماد: ${err.message}`);
     }
   }
+
+  if (data.startsWith('request_edit:')) {
+    const user = await getUserProfile(chatId);
+    if (!user || (user.role !== 'admin' && user.role !== 'supervisor')) {
+      return bot.answerCallbackQuery(query.id, { text: "⚠️ هذه الخاصية مخصصة للمشرفين فقط." }).catch(() => {});
+    }
+
+    const broadcastId = data.split('request_edit:')[1];
+    const broadcast = await fbGet(`radios/${broadcastId}`);
+    if (!broadcast) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ الإذاعة غير موجودة" }).catch(() => {});
+    }
+
+    bot.answerCallbackQuery(query.id, { text: "اختر الفقرة المراد تعديلها" }).catch(() => {});
+
+    const sectionButtons = [
+      [{ text: "1️⃣ 1. المقدمة والترحيب", callback_data: `edit_sec:${broadcastId}:0` }],
+      [{ text: "2️⃣ 2. كلمة الصباح", callback_data: `edit_sec:${broadcastId}:1` }],
+      [{ text: "3️⃣ 3. الحديث الشريف", callback_data: `edit_sec:${broadcastId}:2` }],
+      [{ text: "4️⃣ 4. رسالة للطالب / توجيه", callback_data: `edit_sec:${broadcastId}:3` }],
+      [{ text: "5️⃣ 5. الخاتمة", callback_data: `edit_sec:${broadcastId}:4` }]
+    ];
+
+    return safeSendMessage(chatId,
+      `✏️ *اختر رقم الفقرة المطلوبة لتعديلها من قائمة الفقرات التالية:*`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: sectionButtons }
+      }
+    );
+  }
+
+  if (data.startsWith('edit_sec:')) {
+    const parts = data.split(':');
+    const broadcastId = parts[1];
+    const secIndex = Number(parts[2]);
+
+    const broadcast = await fbGet(`radios/${broadcastId}`);
+    if (!broadcast || !broadcast.slides || !broadcast.slides[secIndex]) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ الفقرة غير موجودة" }).catch(() => {});
+    }
+
+    const secTitle = broadcast.slides[secIndex].title;
+    await fbSet(`userState/${chatId}`, {
+      step: 'ENTER_EDIT_NOTE',
+      broadcastId,
+      secIndex
+    });
+
+    bot.answerCallbackQuery(query.id, { text: `اخترت: ${secTitle}` }).catch(() => {});
+
+    return safeSendMessage(chatId,
+      `📝 *أدخل ملاحظة التعديل:* \n\n` +
+      `الفقرة المحددة: *(${secTitle})*\n` +
+      `اكتب رسالة/ملاحظة بسيطة توضح للسفير المطلوب تعديله في هذه الفقرة:`,
+      { parse_mode: 'Markdown' }
+    );
+  }
 });
 
 // ═══════════════════════════════════════════════════════
-// PURE GEMINI API GENERATION (NO STATIC TEMPLATES)
+// PURE GEMINI API GENERATION
 // ═══════════════════════════════════════════════════════
-async function generateRadioBroadcast() {
+async function generateRadioBroadcast(userProfile = null) {
   await autoCleanupOldBroadcasts();
 
   const topic = await getWeeklyTopic();
-  const responsibleClass = await getResponsibleClass();
+  const scheduleClass = await getResponsibleClass();
+
+  const classLabel = userProfile?.className || scheduleClass || 'فصل غير محدد';
+  const grade = userProfile?.grade || (classLabel.startsWith('1') ? 1 : classLabel.startsWith('2') ? 2 : 3);
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس: (مقدمة وترحيب، كلمة الصباح، حديث شريف صحيح وموثوق يخدم الموضوع مع الراوي والمصدر، أبيات شعرية عربية حقيقية عن الموضوع، وخاتمة). يمنع تكرار القوالب الجاهزة.
+  const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
+1. المقدمة والترحيب
+2. كلمة الصباح
+3. الحديث الشريف
+4. رسالة للطالب / توجيه
+5. الخاتمة
 
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
-{"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"حديث شريف","content":"..."},{"title":"رسالة للطلاب / شعر","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
+{"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
   if (!ai) {
     const errorMsg = "فشل التوليد من Gemini API: GEMINI_API_KEY غير موجود في متغيرات البيئة (.env)";
     console.error(`❌ ${errorMsg}`);
-    await safeSendMessage(ADMIN_CHAT_ID, `❌ ${errorMsg}`);
+    if (userProfile?.telegramId) {
+      await safeSendMessage(userProfile.telegramId, `❌ ${errorMsg}`);
+    }
     return;
   }
 
-  // Official supported models list for @google/genai SDK
   const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
   let sections = null;
   let lastError = null;
@@ -325,8 +658,8 @@ async function generateRadioBroadcast() {
 
       if (responseText) {
         const parsed = JSON.parse(responseText);
-        if (parsed.sections && Array.isArray(parsed.sections)) {
-          sections = parsed.sections;
+        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
+          sections = parsed.sections.slice(0, 5);
           console.log(`✅ Gemini API generation succeeded using model: ${mName}`);
           break;
         }
@@ -337,16 +670,15 @@ async function generateRadioBroadcast() {
     }
   }
 
-  // STRICT REQUIREMENT: If Gemini API fails, report explicit error without fallbacks
   if (!sections) {
     const apiErrDetail = lastError ? (lastError.message || JSON.stringify(lastError)) : "Unknown Error";
     const explicitErrorMsg = `فشل التوليد من Gemini API: [${apiErrDetail}]`;
     console.error(`❌ CRITICAL: ${explicitErrorMsg}`);
-    await safeSendMessage(ADMIN_CHAT_ID, `❌ ${explicitErrorMsg}`);
+    if (userProfile?.telegramId) {
+      await safeSendMessage(userProfile.telegramId, `❌ ${explicitErrorMsg}`);
+    }
     return;
   }
-
-  const classLabel = responsibleClass || 'فصل غير محدد';
 
   const slides = sections.map(sec => ({
     student: classLabel,
@@ -354,10 +686,15 @@ async function generateRadioBroadcast() {
     content: sec.content
   }));
 
+  const ambassadorId = userProfile?.telegramId ? String(userProfile.telegramId) : String(ADMIN_CHAT_ID);
+
   const broadcastData = {
+    ambassadorId,
     class: classLabel,
+    grade: grade,
     date: dateStr,
     status: 'pending',
+    approved: false,
     topic,
     slides,
     timestamp: Date.now()
@@ -365,34 +702,41 @@ async function generateRadioBroadcast() {
 
   await saveBroadcastToFirebase(broadcastId, broadcastData, 'pending');
 
-  const icons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
-  let msgText = `🎙 *إذاعة جديدة — بانتظار الاعتماد*\n`;
-  msgText += `📌 *الموضوع:* ${topic}\n`;
-  msgText += `🏫 *الفصل المسؤول:* ${classLabel}\n`;
-  msgText += `📅 *التاريخ:* ${dateStr}\n\n`;
-  sections.forEach((sec, i) => {
-    msgText += `${icons[i]} *${sec.title}:*\n${sec.content}\n\n`;
-  });
+  const contentBody = buildBroadcastMessageText(topic, classLabel, dateStr, slides);
 
-  await safeSendMessage(ADMIN_CHAT_ID, msgText, {
+  await safeSendMessage(ambassadorId,
+    `🎙 *معاينة الإذاعة الخاصة بك (فصل ${classLabel}):*\n\n` +
+    contentBody +
+    `ℹ️ *ملاحظة:* تم إرسال هذه الإذاعة لمشرف المرحلة للمراجعة والاعتماد.`,
+    { parse_mode: 'Markdown' }
+  );
+
+  const supervisorChatId = await findSupervisorForGrade(grade);
+
+  const supervisorMsg = `🎙 *إذاعة جديدة بانتظار الاعتماد (فصل ${classLabel}):*\n\n` + contentBody;
+  const inlineButtons = {
+    inline_keyboard: [
+      [{ text: "✅ اعتماد ونشر الإذاعة", callback_data: `approve_broadcast:${broadcastId}` }],
+      [{ text: "✏️ طلب تعديل فقرة", callback_data: `request_edit:${broadcastId}` }]
+    ]
+  };
+
+  await safeSendMessage(supervisorChatId, supervisorMsg, {
     parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "✅ اعتماد ونشر الإذاعة", callback_data: `approve_broadcast:${broadcastId}` }]
-      ]
-    }
+    reply_markup: inlineButtons
   });
-}
 
-// Cron Jobs
-cron.schedule('0 7 * * 0-4', () => {
-  console.log("⏰ Cron: Generating daily broadcast...");
-  generateRadioBroadcast();
-}, { timezone: "Asia/Riyadh" });
+  if (String(supervisorChatId) !== String(ADMIN_CHAT_ID)) {
+    await safeSendMessage(ADMIN_CHAT_ID, `📢 *نسخة للإدارة:* ` + supervisorMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: inlineButtons
+    });
+  }
+}
 
 cron.schedule('0 0 * * *', () => {
   console.log("🗑️ Cron: Auto-cleanup old pending broadcasts...");
   autoCleanupOldBroadcasts();
 }, { timezone: "Asia/Riyadh" });
 
-console.log("🤖 Telegram Bot started successfully with @google/genai SDK.");
+console.log("🤖 Telegram Bot started successfully with Full Broadcast Lifecycle & Section Editing.");

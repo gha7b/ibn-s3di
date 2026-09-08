@@ -251,10 +251,19 @@ function buildBroadcastMessageText(topic, classLabel, dateStr, slides) {
   return msgText;
 }
 
-// ═══════════════════════════════════════════════════════
-// TELEGRAM BOT
-// ═══════════════════════════════════════════════════════
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+const usePolling = process.env.USE_POLLING === 'true';
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: usePolling });
+
+if (usePolling) {
+  bot.on('polling_error', (error) => {
+    if (error.message && error.message.includes('409 Conflict')) {
+      console.warn('⚠️ Webhook is active on Vercel. Local polling stopped to prevent breaking Webhook.');
+      bot.stopPolling();
+    } else {
+      console.warn('⚠️ Telegram Polling Error:', error.message);
+    }
+  });
+}
 
 async function safeSendMessage(chatId, text, options = {}) {
   try {

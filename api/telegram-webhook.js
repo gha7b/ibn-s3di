@@ -610,21 +610,46 @@ async function processUpdate(update) {
 }
 
 // ═══════════════════════════════════════════════════════
-// MAIN HANDLER — Returns 200 IMMEDIATELY, processes async
+// MAIN HANDLER — Awaits update processing so Vercel does NOT freeze execution
 // ═══════════════════════════════════════════════════════
 export default async function handler(req, res) {
-  res.status(200).json({ ok: true });
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'GET') return;
-  if (req.method !== 'POST') return;
-
-  const update = req.body;
-  if (!update || typeof update !== 'object') {
-    console.error('[WEBHOOK] Invalid update body received');
-    return;
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  processUpdate(update).catch(err => {
-    console.error('[WEBHOOK] Unhandled processUpdate error:', err);
-  });
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      ok: true,
+      service: 'Ibn Saadi Smart Broadcast Telegram Webhook',
+      status: 'Active',
+      time: new Date().toISOString()
+    });
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(200).json({ ok: true });
+  }
+
+  try {
+    let update = req.body;
+    if (typeof update === 'string') {
+      try {
+        update = JSON.parse(update);
+      } catch (e) {
+        console.error('[WEBHOOK] Failed to parse req.body string as JSON:', e.message);
+      }
+    }
+
+    if (update && typeof update === 'object') {
+      await processUpdate(update);
+    }
+  } catch (err) {
+    console.error('[WEBHOOK] Error processing Telegram update:', err);
+  }
+
+  return res.status(200).json({ ok: true });
 }

@@ -92,7 +92,7 @@ const i18n = {
     loginTitleAdmin: "دخول الإدارة",
     loginTitleAmb: "دخول السفير",
     pinPlaceholder: "أدخل الرمز السري",
-    defaultPinHint: "الرمز السري الافتراضي: 1234",
+    defaultPinHint: "",
     loginBtn: "دخول",
     quranTitle: "تلاوات القرآن الكريم",
     ambDashboardTitle: "لوحة سفير الفصل",
@@ -151,7 +151,7 @@ const i18n = {
     loginTitleAdmin: "Admin Login",
     loginTitleAmb: "Ambassador Login",
     pinPlaceholder: "Enter Passcode / PIN",
-    defaultPinHint: "Default PIN: 1234",
+    defaultPinHint: "",
     loginBtn: "Login",
     quranTitle: "Holy Quran Recitations",
     ambDashboardTitle: "Class Ambassador Portal",
@@ -215,7 +215,7 @@ function initCloudSync() {
   window.db.ref('radios').on('value', s => {
     S.radios = objArr(s.val()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     const adm = $('adminOverlay');
-    if (adm && adm.classList.contains('open')) {
+    if (adm && adm.classList.contains('active')) {
       renderAdminRadios();
       populateAttendanceRadios();
     }
@@ -224,7 +224,7 @@ function initCloudSync() {
   window.db.ref('attendance').on('value', s => {
     S.attendance = objArr(s.val());
     const adm = $('adminOverlay');
-    if (adm && adm.classList.contains('open')) {
+    if (adm && adm.classList.contains('active')) {
       populateAttendanceTable();
     }
     populateAttendanceRadios();
@@ -234,7 +234,7 @@ function initCloudSync() {
     S.news = objArr(s.val());
     startNewsSlider();
     const adm = $('adminOverlay');
-    if (adm && adm.classList.contains('open')) renderAdminNews();
+    if (adm && adm.classList.contains('active')) renderAdminNews();
   });
 
   window.db.ref('schedule').on('value', s => { S.schedule = s.val() || {}; });
@@ -263,11 +263,9 @@ function initFloatingIcons() {
   // Smooth ambient effects
 }
 
-function initInfoLoop() {
-  if (typeof startNewsSlider === 'function') startNewsSlider();
-}
+// initInfoLoop is defined further below (full implementation with participants scroll)
 
-// ADMIN TAB SWITCHER
+// ADMIN TAB SWITCHER — single authoritative definition
 window.showTab = function(tabId, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-body').forEach(b => b.classList.remove('active'));
@@ -277,7 +275,8 @@ window.showTab = function(tabId, btn) {
   if (tabId === 'tabRadios') renderAdminRadios();
   if (tabId === 'tabBackup') { if (!S_bp.list.length) loadBackupBroadcasts(renderBackupAdmin); else renderBackupAdmin(); }
   if (tabId === 'tabAttend') { populateAttendanceRadios(); populateAttendanceTable(); }
-  if (tabId === 'tabSchedule') renderScheduleAdmin();
+  if (tabId === 'tabSchedule') loadAndRenderScheduleTab();
+  if (tabId === 'tabSettings') { /* settings already bound */ }
   if (tabId === 'tabContent') { renderAdminNews(); renderTickerAdmin(); renderAdminQuran(); }
 };
 
@@ -579,7 +578,7 @@ function openLogin() {
 
   const hintText = $('pinHintText');
   if (hintText) {
-    hintText.innerText = isAdmin ? 'رمز الإدارة الافتراضي: 1234' : 'الرمز السري الافتراضي للفصل: 1234';
+    hintText.innerText = '';
   }
 
   const pw = $('loginPass');
@@ -1138,7 +1137,7 @@ window.saveSt = function(key, btn) {
   }
 };
 
-// SMART WEEKLY SCHEDULE
+// SMART WEEKLY SCHEDULE (legacy 5-day grid — kept for backward compat, grid div may not exist)
 window.renderScheduleAdmin = function() {
   const grid = $('scheduleGrid');
   if (!grid) return;
@@ -1164,6 +1163,44 @@ window.renderScheduleAdmin = function() {
   }
   grid.innerHTML = html;
 };
+
+// Load schedule rows from Firebase then render the full schedule table
+function loadAndRenderScheduleTab() {
+  if (window.db) {
+    window.db.ref('broadcastSchedule').once('value', snap => {
+      const val = snap.val();
+      if (Array.isArray(val) && val.length) {
+        window.scheduleRows = val;
+        renderScheduleTable();
+      } else {
+        // Fall back: try old 'schedule' path to migrate data
+        window.db.ref('schedule').once('value', snap2 => {
+          const v2 = snap2.val();
+          if (v2 && typeof v2 === 'object') {
+            const arr = Object.values(v2);
+            if (arr.length && arr[0] && typeof arr[0] === 'object' && ('day' in arr[0] || 'className' in arr[0])) {
+              window.scheduleRows = arr;
+            } else {
+              const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+              window.scheduleRows = Object.keys(v2).slice(0, 5).map((k, i) => ({
+                day: days[i] || '',
+                date: '',
+                className: v2[k].class || '',
+                topic: ''
+              })).filter(r => r.className);
+            }
+          } else {
+            window.scheduleRows = [];
+          }
+          renderScheduleTable();
+        });
+      }
+    });
+  } else {
+    if (!window.scheduleRows) window.scheduleRows = [];
+    renderScheduleTable();
+  }
+}
 
 window.saveSchedule = function(btn) {
   const updates = {};
@@ -1332,11 +1369,12 @@ window.deleteAnthemVideo = function() {
 };
 
 // ATTENDANCE MANAGEMENT
+// ATTENDANCE MANAGEMENT
 function populateAttendanceRadios() {
   const sel = $('attendRadioSel');
   if (!sel) return;
-  const approved = S.radios.filter(r => r.status === 'approved');
-  sel.innerHTML = '<option value="">اختر إذاعة...</option>' + approved.map(r => `<option value="${r.id}">فصل ${r.class || '?'} - ${r.date || ''}</option>`).join('');
+  const approved = S.radios ? S.radios.filter(r => r.status === 'approved' || r.status === 'pending') : [];
+  sel.innerHTML = '<option value="">اختر إذاعة...</option>' + approved.map(r => `<option value="${r.id}" ${r.id === S.currentRadioId ? 'selected' : ''}>فصل ${r.class || '?'} - ${r.date || ''} (${r.status === 'approved' ? 'معتمدة' : 'معلقة'})</option>`).join('');
 }
 
 window.loadAttendance = function() {
@@ -1348,65 +1386,259 @@ function populateAttendanceTable() {
   const tb = $('attendBody');
   if (!tb) return;
   if (!S.currentRadioId) {
-    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;opacity:0.6;">اختر إذاعة لعرض سجل الحضور</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;opacity:0.6;">اختر إذاعة من القائمة أعلاه لعرض وتعديل كشف الحضور والطلاب البدلاء</td></tr>';
     return;
   }
-  const data = S.attendance.filter(a => a.radioId === S.currentRadioId);
-  if (!data.length) {
-    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;opacity:0.6;">لا توجد بيانات حضور لهذه الإذاعة</td></tr>';
+
+  const selectedRadio = S.radios.find(r => r.id === S.currentRadioId);
+  if (!selectedRadio || !selectedRadio.slides || !selectedRadio.slides.length) {
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;opacity:0.6;">لا توجد فقرات أو طلاب لهذه الإذاعة</td></tr>';
     return;
   }
-  tb.innerHTML = data.map((info, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>فصل ${info.class || ''} - ${info.date || ''}</td>
-      <td><b>${info.student || ''}</b></td>
-      <td>${info.slide || ''}</td>
-      <td>
-        <select class="input-field" style="padding:4px 10px;margin:0;" onchange="updateAttend('${info.id}',this.value)">
-          <option value="حاضر" ${info.status === 'حاضر' ? 'selected' : ''}>حاضر ✅</option>
-          <option value="غائب" ${info.status === 'غائب' ? 'selected' : ''}>غائب ❌</option>
-        </select>
-      </td>
-    </tr>
-  `).join('');
+
+  const radioId = selectedRadio.id;
+  tb.innerHTML = selectedRadio.slides.map((s, idx) => {
+    const attId = `${radioId}_${idx}`;
+    const att = (S.attendance || []).find(a => a.id === attId || (a.radioId === radioId && a.slide === s.title)) || {};
+    const status = att.status || 'حاضر';
+    const subName = att.substituteStudent || '';
+
+    return `
+      <tr>
+        <td>${idx + 1}</td>
+        <td>فصل ${selectedRadio.class || ''} - ${selectedRadio.date || ''}</td>
+        <td><b>${s.title || `فقرة ${idx + 1}`}</b></td>
+        <td><b style="color:var(--gold);">${s.student || 'طالب مشارك'}</b></td>
+        <td>
+          <select class="input-field" style="padding:4px 10px;margin:0;" id="att_status_${attId}" onchange="toggleSubInput('${attId}', this.value)">
+            <option value="حاضر" ${status === 'حاضر' ? 'selected' : ''}>حاضر ✅</option>
+            <option value="غائب" ${status === 'غائب' ? 'selected' : ''}>غائب ❌</option>
+          </select>
+        </td>
+        <td>
+          <input type="text" class="input-field" id="att_sub_${attId}" placeholder="اسم الطالب البديل" value="${subName}" style="padding:4px 8px;margin:0;${status === 'غائب' ? 'display:block;' : 'display:none;'}">
+        </td>
+        <td>
+          <button class="btn btn-accent" style="padding:4px 10px;font-size:0.85rem;" onclick="saveAttendanceRow('${attId}', '${radioId}', ${idx}, '${(s.student || '').replace(/'/g, "\\'")}')"><i class="fas fa-save"></i> حفظ</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
-window.updateAttend = function(id, status) {
-  cloudUpdate('attendance/' + id, { status: status });
+window.toggleSubInput = function(attId, status) {
+  const input = $(`att_sub_${attId}`);
+  if (input) input.style.display = (status === 'غائب') ? 'block' : 'none';
 };
 
-window.exportExcel = function() {
-  if (!S.currentRadioId) { showToast('اختر إذاعة أولاً', 'error'); return; }
-  const data = S.attendance.filter(a => a.radioId === S.currentRadioId);
-  let csv = '\uFEFFالفصل,التاريخ,الطالب,الفقرة,الحالة\n';
-  data.forEach(i => { csv += `${i.class || ''},${i.date || ''},${i.student || ''},${i.slide || ''},${i.status || ''}\n`; });
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'حضور_الإذاعة.csv';
-  a.click();
+window.saveAttendanceRow = async function(attId, radioId, slideIdx, origStudent) {
+  const statusEl = $(`att_status_${attId}`);
+  const subEl = $(`att_sub_${attId}`);
+  const status = statusEl ? statusEl.value : 'حاضر';
+  const subStudent = subEl ? subEl.value.trim() : '';
+
+  const radio = S.radios.find(r => r.id === radioId);
+  if (!radio) return;
+
+  const attRecord = {
+    id: attId,
+    radioId,
+    class: radio.class || '',
+    date: radio.date || '',
+    student: origStudent,
+    substituteStudent: status === 'غائب' ? subStudent : '',
+    slide: radio.slides[slideIdx]?.title || '',
+    status: status,
+    updatedAt: Date.now()
+  };
+
+  if (window.db) {
+    await window.db.ref(`attendance/${attId}`).set(attRecord);
+
+    if (status === 'غائب' && subStudent) {
+      const activeStudentName = `${subStudent} (بديل لـ ${origStudent})`;
+      await window.db.ref(`radios/${radioId}/slides/${slideIdx}/student`).set(activeStudentName);
+      if (radio.status === 'approved') {
+        await window.db.ref(`approvedBroadcast/slides/${slideIdx}/student`).set(activeStudentName);
+      }
+    } else if (status === 'حاضر') {
+      await window.db.ref(`radios/${radioId}/slides/${slideIdx}/student`).set(origStudent);
+      if (radio.status === 'approved') {
+        await window.db.ref(`approvedBroadcast/slides/${slideIdx}/student`).set(origStudent);
+      }
+    }
+  }
+
+  showToast('تم حفظ حالة الحضور والتحديث بنجاح', 'success');
+  if (typeof syncCurrentTopic === 'function') syncCurrentTopic();
+};
+
+window.exportAttendanceExcel = function() {
+  if (!S.currentRadioId) { showToast('اختر إذاعة أولاً لتصدير كشف الحضور', 'error'); return; }
+  const selectedRadio = S.radios.find(r => r.id === S.currentRadioId);
+  if (!selectedRadio || !selectedRadio.slides) { showToast('لا توجد بيانات كشف الحضور لهذه الإذاعة', 'error'); return; }
+
+  const excelRows = selectedRadio.slides.map((s, idx) => {
+    const attId = `${selectedRadio.id}_${idx}`;
+    const att = (S.attendance || []).find(a => a.id === attId) || {};
+    return {
+      'م': idx + 1,
+      'الفصل': selectedRadio.class || '',
+      'التاريخ': selectedRadio.date || '',
+      'الفقرة': s.title || '',
+      'الطالب الأصلي': s.student || '',
+      'حالة الحضور': att.status || 'حاضر',
+      'الطالب البديل': att.substituteStudent || 'لا يوجد'
+    };
+  });
+
+  if (typeof XLSX === 'undefined') { showToast('مكتبة Excel غير محملة', 'error'); return; }
+  const worksheet = XLSX.utils.json_to_sheet(excelRows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "سجل الحضور والغياب");
+  XLSX.writeFile(workbook, `حضور_إذاعة_فصل_${selectedRadio.class || ''}_${selectedRadio.date || ''}.xlsx`);
+  showToast('تم تصدير ملف Excel بنجاح', 'success');
 };
 
 window.deleteAttendanceRecord = function() {
   if (!S.currentRadioId) { showToast('اختر إذاعة أولاً', 'error'); return; }
   if (!confirm('مسح سجل الحضور لهذه الإذاعة؟')) return;
-  const updates = {};
   if (window.db) {
-    window.db.ref().update(updates).then(() => showToast('تم مسح سجل الحضور', 'info'));
-  } else {
-    showToast('تم مسح سجل الحضور', 'info');
+    window.db.ref('attendance').once('value', snapshot => {
+      const data = snapshot.val() || {};
+      const updates = {};
+      Object.keys(data).forEach(k => {
+        if (data[k].radioId === S.currentRadioId) updates[`attendance/${k}`] = null;
+      });
+      window.db.ref().update(updates).then(() => {
+        showToast('تم مسح سجل الحضور بنجاح', 'info');
+        populateAttendanceTable();
+      });
+    });
   }
 };
 
-// TAB SWITCHER INSIDE ADMIN MODAL
-window.showTab = function(tabId, btn) {
-  document.querySelectorAll('.tab-body').forEach(c => c.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const t = $(tabId); if (t) t.classList.add('active');
-  if (btn) btn.classList.add('active');
-  if (tabId === 'tabBackup') loadBackupBroadcasts(renderBackupAdmin);
+// SCHEDULE MANAGEMENT SYSTEM (FULL EXCEL IMPORT / EXPORT)
+window.scheduleRows = [];
+
+function renderScheduleTable() {
+  const tbody = $('scheduleTableBody');
+  if (!tbody) return;
+  if (!window.scheduleRows || !window.scheduleRows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;opacity:0.6;padding:20px;">لا يوجد جدول إذاعات مضاف بعد. اضغط "إضافة موعد" أو "استيراد من Excel"</td></tr>';
+    return;
+  }
+  tbody.innerHTML = window.scheduleRows.map((row, i) => `
+    <tr>
+      <td><input class="input-field" style="padding:4px 8px;margin:0;" value="${row.day || ''}" oninput="window.scheduleRows[${i}].day=this.value"></td>
+      <td><input class="input-field" type="date" style="padding:4px 8px;margin:0;" value="${row.date || ''}" oninput="window.scheduleRows[${i}].date=this.value"></td>
+      <td><input class="input-field" style="padding:4px 8px;margin:0;" value="${row.className || row.class || ''}" oninput="window.scheduleRows[${i}].className=this.value"></td>
+      <td><input class="input-field" style="padding:4px 8px;margin:0;" value="${row.topic || ''}" oninput="window.scheduleRows[${i}].topic=this.value"></td>
+      <td><button class="btn btn-red" style="padding:4px 8px;" onclick="removeScheduleRow(${i})"><i class="fas fa-trash"></i></button></td>
+    </tr>
+  `).join('');
+}
+
+window.addNewScheduleRow = function() {
+  if (!window.scheduleRows) window.scheduleRows = [];
+  window.scheduleRows.push({ day: 'الأحد', date: new Date().toISOString().split('T')[0], className: '1-1', topic: 'موضوع الإذاعة' });
+  renderScheduleTable();
 };
+
+window.removeScheduleRow = function(idx) {
+  window.scheduleRows.splice(idx, 1);
+  renderScheduleTable();
+};
+
+window.saveScheduleTable = function() {
+  if (!window.scheduleRows || !window.scheduleRows.length) {
+    showToast('لا يوجد جدول لحفظه', 'error');
+    return;
+  }
+  if (window.db) {
+    window.db.ref('broadcastSchedule').set(window.scheduleRows).then(() => {
+      showToast('تم حفظ جدول الإذاعات الشامل بنجاح ✅', 'success');
+    });
+  } else {
+    showToast('تم حفظ جدول الإذاعات بنجاح', 'success');
+  }
+};
+
+window.handleScheduleExcelImport = function(fileInput) {
+  const file = fileInput.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { showToast('مكتبة Excel غير محملة', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (!json || !json.length) {
+        showToast('ملف Excel فارغ أو غير صالح', 'error');
+        return;
+      }
+
+      window.scheduleRows = json.map(row => ({
+        day: row['اليوم'] || row['day'] || row['Day'] || 'الأحد',
+        date: row['التاريخ'] || row['date'] || row['Date'] || '',
+        className: row['الفصل'] || row['الفصل المكلف'] || row['class'] || row['Class'] || '',
+        topic: row['موضوع الإذاعة'] || row['الموضوع'] || row['topic'] || row['Topic'] || ''
+      }));
+
+      renderScheduleTable();
+      saveScheduleTable();
+      showToast(`تم استيراد ${window.scheduleRows.length} موعد إذاعة بنجاح من Excel!`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('حدث خطأ أثناء قراءة ملف Excel', 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  fileInput.value = '';
+};
+
+window.exportScheduleExcel = function() {
+  if (typeof XLSX === 'undefined') { showToast('مكتبة Excel غير محملة', 'error'); return; }
+
+  let excelData;
+  let filename;
+
+  if (!window.scheduleRows || !window.scheduleRows.length) {
+    // Export an empty template with correct Arabic headers
+    excelData = [
+      { 'م': 1, 'اليوم': 'الأحد', 'التاريخ': '2026-09-01', 'الفصل المكلف': '1-1', 'موضوع الإذاعة': 'موضوع الإذاعة' },
+      { 'م': 2, 'اليوم': 'الإثنين', 'التاريخ': '2026-09-02', 'الفصل المكلف': '1-2', 'موضوع الإذاعة': 'موضوع الإذاعة' },
+      { 'م': 3, 'اليوم': 'الثلاثاء', 'التاريخ': '2026-09-03', 'الفصل المكلف': '2-1', 'موضوع الإذاعة': 'موضوع الإذاعة' },
+      { 'م': 4, 'اليوم': 'الأربعاء', 'التاريخ': '2026-09-04', 'الفصل المكلف': '2-2', 'موضوع الإذاعة': 'موضوع الإذاعة' },
+      { 'م': 5, 'اليوم': 'الخميس', 'التاريخ': '2026-09-05', 'الفصل المكلف': '3-1', 'موضوع الإذاعة': 'موضوع الإذاعة' },
+    ];
+    filename = 'نموذج_جدول_الإذاعات_المدرسية.xlsx';
+    showToast('تم تصدير نموذج Excel فارغ — يمكنك تعبئته واستيراده', 'info');
+  } else {
+    excelData = window.scheduleRows.map((r, i) => ({
+      'م': i + 1,
+      'اليوم': r.day || '',
+      'التاريخ': r.date || '',
+      'الفصل المكلف': r.className || r.class || '',
+      'موضوع الإذاعة': r.topic || ''
+    }));
+    filename = 'جدول_الإذاعات_المدرسية_الشامل.xlsx';
+    showToast('تم تصدير جدول الإذاعات الشامل بنجاح ✅', 'success');
+  }
+
+  const worksheet = XLSX.utils.json_to_sheet(excelData);
+  // Set column widths for readability
+  worksheet['!cols'] = [{ wch: 4 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 28 }];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'جدول الإذاعات المدرسية');
+  XLSX.writeFile(workbook, filename);
+};
+
+// (duplicate showTab removed — see single definition at top of file)
 
 // INFO SCREEN DISPLAY LOOP
 let newsSliderTimer = null;
@@ -1565,11 +1797,6 @@ window.startNewsSlider = function() {
   show();
   newsSliderTimer = setInterval(show, (S.newsDuration || 8) * 1000);
 };
-
-// FLOATING EDUCATIONAL ICONS (CLEAN NO-OP)
-function initFloatingIcons() {
-  // Ambient clean background
-}
 
 // EMERGENCY BACKUP BROADCASTS
 function loadBackupBroadcasts(cb) {

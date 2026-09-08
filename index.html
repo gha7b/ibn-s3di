@@ -231,10 +231,7 @@
       <h2 id="loginTitle" class="modal-title">دخول النظام</h2>
       <p id="loginSubtitle" class="login-subtitle">أدخل الرمز السري للمتابعة</p>
       <input type="password" id="loginPass" class="input-field pin-input" maxlength="12" placeholder="••••••" autocomplete="off">
-      <div class="pin-hint" id="pinHintBox">
-        <i class="fas fa-circle-info"></i>
-        <span id="pinHintText">الرمز الافتراضي: 1234</span>
-      </div>
+
       <div id="loginError" class="error-msg" style="display:none">الرمز السري غير صحيح!</div>
       <button class="btn btn-primary full-btn" onclick="validateLogin()">
         <span data-i18n="loginBtn">دخول</span> <i class="fas fa-arrow-left"></i>
@@ -376,17 +373,25 @@
 
       <!-- TAB: ATTENDANCE -->
       <div id="tabAttend" class="tab-body">
-        <div class="attend-toolbar">
-          <select id="attendRadioSel" class="input-field" onchange="loadAttendance()">
+        <div class="attend-toolbar" style="display:flex;gap:10px;align-items:center;margin-bottom:15px;flex-wrap:wrap;">
+          <select id="attendRadioSel" class="input-field" style="flex:1;min-width:200px;" onchange="loadAttendance()">
             <option value="">اختر إذاعة...</option>
           </select>
-          <button class="btn btn-red" onclick="deleteAttendanceRecord()"><i class="fas fa-trash"></i> مسح</button>
-          <button class="btn btn-gold" onclick="exportExcel()"><i class="fas fa-file-excel"></i> Excel</button>
+          <button class="btn btn-gold" onclick="exportAttendanceExcel()"><i class="fas fa-file-excel"></i> تصدير جدول الحضور (Excel)</button>
+          <button class="btn btn-red" onclick="deleteAttendanceRecord()"><i class="fas fa-trash"></i> مسح السجل</button>
         </div>
         <div class="table-wrap">
           <table id="attendTable" class="attend-table">
             <thead>
-              <tr><th>#</th><th>الفصل / التاريخ</th><th>الطالب</th><th>الفقرة</th><th>الحضور</th></tr>
+              <tr>
+                <th>#</th>
+                <th>الفصل / التاريخ</th>
+                <th>الفقرة</th>
+                <th>الطالب الأصلي</th>
+                <th>حالة الحضور</th>
+                <th>الطالب البديل (في حال الغياب)</th>
+                <th>حفظ</th>
+              </tr>
             </thead>
             <tbody id="attendBody"></tbody>
           </table>
@@ -396,13 +401,31 @@
       <!-- TAB: SCHEDULE -->
       <div id="tabSchedule" class="tab-body">
         <div class="scard span2">
-          <div class="scard-head">
-            <label><i class="fas fa-calendar-alt"></i> الجدول الأسبوعي وكلمات المرور</label>
-            <button class="btn btn-accent-sm" onclick="exportScheduleExcel()"><i class="fas fa-file-excel"></i> تصدير</button>
+          <div class="scard-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:15px;">
+            <label><i class="fas fa-calendar-alt"></i> جدول إسناد الإذاعات المدرسية (الشهر / الترم كامل)</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input type="file" id="scheduleFileInput" accept=".xlsx, .xls, .csv" style="display:none;" onchange="handleScheduleExcelImport(this)">
+              <button class="btn btn-accent" style="padding:6px 12px;font-size:0.9rem;" onclick="$('scheduleFileInput').click()"><i class="fas fa-file-import"></i> استيراد من Excel</button>
+              <button class="btn btn-gold" style="padding:6px 12px;font-size:0.9rem;" onclick="exportScheduleExcel()"><i class="fas fa-file-export"></i> تصدير إلى Excel</button>
+              <button class="btn btn-primary" style="padding:6px 12px;font-size:0.9rem;" onclick="addNewScheduleRow()"><i class="fas fa-plus"></i> إضافة موعد</button>
+            </div>
           </div>
-          <p class="field-hint mb15">عيّن فصلاً لكل يوم. الرمز الافتراضي: <b>1234</b></p>
-          <div id="scheduleGrid" class="schedule-grid-wrap"></div>
-          <button class="btn btn-gold full-btn mt20" onclick="saveSchedule(this)"><i class="fas fa-save"></i> حفظ الجدول</button>
+          <p class="field-hint mb15">يمكنك رفع واستيراد وتصدير جدول الإذاعات الشامل عبر ملف Excel (المسمى باليوم والتاريخ والفصل والموضوع)، أو التعديل المباشر في الجدول:</p>
+          <div class="table-wrap">
+            <table class="attend-table">
+              <thead>
+                <tr>
+                  <th>اليوم</th>
+                  <th>التاريخ</th>
+                  <th>الفصل المكلف</th>
+                  <th>موضوع الإذاعة</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="scheduleTableBody"></tbody>
+            </table>
+          </div>
+          <button class="btn btn-gold full-btn mt20" onclick="saveScheduleTable()"><i class="fas fa-save"></i> حفظ جدول الإذاعات</button>
         </div>
       </div>
     </div>

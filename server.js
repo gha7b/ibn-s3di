@@ -7,7 +7,14 @@ const { GoogleGenAI } = require('@google/genai');
 // AUTH CODES REGISTRY
 // ═══════════════════════════════════════════════════════
 const AUTH_CODES = {
-  // 1ST GRADE AMBASSADORS
+  // ── SUPER ADMIN (المشرف العام) ──
+  '101020': { role: 'admin', isSuperAdmin: true, gradeName: 'المشرف العام (Super Admin)', gradeScope: 'إشراف شامل على كافة المراحل والفصول' },
+
+  // ── TEST CODES (أكواد الاختيار والتجربة) ──
+  '110101': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي (تجريبي)', className: '1-1 (تجريبي)' },
+  '990101': { role: 'supervisor', grade: 1, gradeName: 'أول ثانوي (تجريبي)', gradeScope: 'المرحلة الأولى (تجريبي)' },
+
+  // ── 1ST GRADE AMBASSADORS (أول ثانوي) ──
   '1101': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-1' },
   '1102': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-2' },
   '1103': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-3' },
@@ -15,7 +22,7 @@ const AUTH_CODES = {
   '1105': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-5' },
   '1106': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-6' },
 
-  // 2ND GRADE AMBASSADORS
+  // ── 2ND GRADE AMBASSADORS (ثاني ثانوي) ──
   '2201': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-1' },
   '2202': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-2' },
   '2203': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-3' },
@@ -23,7 +30,7 @@ const AUTH_CODES = {
   '2205': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-5' },
   '2206': { role: 'ambassador', grade: 2, gradeName: 'ثاني ثانوي', className: '2-6' },
 
-  // 3RD GRADE AMBASSADORS
+  // ── 3RD GRADE AMBASSADORS (ثالث ثانوي) ──
   '3301': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-1' },
   '3302': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-2' },
   '3303': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-3' },
@@ -31,7 +38,7 @@ const AUTH_CODES = {
   '3305': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-5' },
   '3306': { role: 'ambassador', grade: 3, gradeName: 'ثالث ثانوي', className: '3-6' },
 
-  // SUPERVISORS
+  // ── SUPERVISORS (المشرفين) ──
   '9901': { role: 'supervisor', grade: 1, gradeName: 'أول ثانوي', gradeScope: 'المرحلة الأولى (أول ثانوي)' },
   '9902': { role: 'supervisor', grade: 2, gradeName: 'ثاني ثانوي', gradeScope: 'المرحلة الثانية (ثاني ثانوي)' },
   '9903': { role: 'supervisor', grade: 3, gradeName: 'ثالث ثانوي', gradeScope: 'المرحلة الثالثة (ثالث ثانوي)' }
@@ -41,8 +48,11 @@ function validateAuthCode(code, selectedRole) {
   if (!code || typeof code !== 'string') return null;
   const trimmedCode = code.trim();
   const entry = AUTH_CODES[trimmedCode];
+
   if (!entry) return null;
+  if (entry.role === 'admin' || entry.isSuperAdmin) return entry;
   if (selectedRole && entry.role !== selectedRole) return null;
+
   return entry;
 }
 
@@ -364,10 +374,12 @@ bot.on('message', async (msg) => {
       );
     }
 
+    const isSuper = match.role === 'admin' || match.isSuperAdmin;
     const userProfile = {
       telegramId: String(chatId),
       role: match.role,
-      grade: match.grade,
+      isSuperAdmin: isSuper || false,
+      grade: match.grade || null,
       gradeName: match.gradeName,
       className: match.className || null,
       gradeScope: match.gradeScope || null,
@@ -379,7 +391,10 @@ bot.on('message', async (msg) => {
     await fbDelete(`userState/${chatId}`);
 
     let welcomeText = '';
-    if (match.role === 'ambassador') {
+    if (isSuper) {
+      welcomeText = `👑 *تم تسجيلك كـ المشرف العام (Super Admin)!*\n\n` +
+        `ستصلك نسخة من جميع الإذاعات والتعديلات لجميع المراحل والفصول.`;
+    } else if (match.role === 'ambassador') {
       welcomeText = `🎉 *تم تسجيلك بنجاح كـ سفير فصل (${match.className}) — ${match.gradeName}!*\n\n` +
         `يمكنك الآن إرسال الأمر /generate لتوليد إذاعة مدرسية جديدة مخصصة لفصلك.`;
     } else {

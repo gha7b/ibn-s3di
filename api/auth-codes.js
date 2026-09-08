@@ -1,11 +1,21 @@
 /**
  * Authentication Codes Registry & Validation Helper
  * 
+ * Super Admin (المشرف العام): 101020 (Full oversight & permission across all grades)
+ * Test Ambassador Code: 110101
+ * Test Supervisor Code: 990101
  * Ambassadors (السفراء): 18 codes for specific classes (1-1 to 3-6)
  * Supervisors (المشرفين): 3 codes for grade levels (Grade 1, Grade 2, Grade 3)
  */
 
 export const AUTH_CODES = {
+  // ── SUPER ADMIN (المشرف العام) ──
+  '101020': { role: 'admin', isSuperAdmin: true, gradeName: 'المشرف العام (Super Admin)', gradeScope: 'إشراف شامل على كافة المراحل والفصول' },
+
+  // ── TEST CODES (أكواد الاختيار والتجربة) ──
+  '110101': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي (تجريبي)', className: '1-1 (تجريبي)' },
+  '990101': { role: 'supervisor', grade: 1, gradeName: 'أول ثانوي (تجريبي)', gradeScope: 'المرحلة الأولى (تجريبي)' },
+
   // ── 1ST GRADE AMBASSADORS (أول ثانوي) ──
   '1101': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-1' },
   '1102': { role: 'ambassador', grade: 1, gradeName: 'أول ثانوي', className: '1-2' },
@@ -48,6 +58,8 @@ export function validateAuthCode(code, selectedRole) {
   const entry = AUTH_CODES[trimmedCode];
 
   if (!entry) return null;
+  // Super Admin code works regardless of role selection
+  if (entry.role === 'admin' || entry.isSuperAdmin) return entry;
   if (selectedRole && entry.role !== selectedRole) return null;
 
   return entry;

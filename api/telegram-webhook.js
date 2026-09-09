@@ -686,7 +686,7 @@ async function processUpdate(update) {
 }
 
 // ═══════════════════════════════════════════════════════
-// MAIN HANDLER — Awaits update processing so Vercel does NOT freeze execution
+// MAIN HANDLER — await processUpdate THEN return 200
 // ═══════════════════════════════════════════════════════
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -719,13 +719,14 @@ export default async function handler(req, res) {
     }
   }
 
-  // ⚡ CRITICAL: Return 200 OK to Telegram IMMEDIATELY to prevent Vercel timeout.
-  // processUpdate runs after we respond — fire-and-forget pattern.
-  res.status(200).json({ ok: true });
-
   if (update && typeof update === 'object') {
-    processUpdate(update).catch(err => {
+    try {
+      await processUpdate(update);
+    } catch (err) {
       console.error('[WEBHOOK] Error processing Telegram update:', err);
-    });
+    }
   }
+
+  return res.status(200).json({ ok: true });
 }
+

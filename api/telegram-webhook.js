@@ -46,6 +46,23 @@ async function tgSend(chatId, text, options = {}) {
   }
 }
 
+async function tgEdit(chatId, messageId, text, options = {}) {
+  if (!TELEGRAM_BOT_TOKEN || !chatId || !messageId) return;
+  try {
+    const body = { chat_id: chatId, message_id: messageId, text, parse_mode: 'Markdown', ...options };
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json();
+    if (!json.ok) console.error('[WEBHOOK] editMessageText failed:', JSON.stringify(json));
+    return json;
+  } catch (err) {
+    console.error('[WEBHOOK] tgEdit error:', err.message);
+  }
+}
+
 async function tgAnswer(callbackQueryId, text = '') {
   if (!TELEGRAM_BOT_TOKEN) return;
   try {
@@ -240,7 +257,7 @@ async function sendBroadcastToSupervisors(broadcastId, broadcastData) {
 // ═══════════════════════════════════════════════════════
 // GEMINI BROADCAST GENERATION
 // ═══════════════════════════════════════════════════════
-export async function generateRadioBroadcast(userProfile) {
+export async function generateRadioBroadcast(userProfile, initialMessageId = null) {
   const topic = await getWeeklyTopic();
   const classLabel = userProfile?.className || 'فصل غير محدد';
   const grade = userProfile?.grade || 1;
@@ -248,9 +265,11 @@ export async function generateRadioBroadcast(userProfile) {
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6KyV45Wj9TcPrPS81QdrrSQJLS0eLRNhDC9g2FVzoC8-w';
   if (!apiKey) {
-    await tgSend(ambassadorId, `❌ فشل التوليد: GEMINI_API_KEY غير موجود في متغيرات البيئة (process.env).`);
+    const errorText = `❌ فشل التوليد: GEMINI_API_KEY غير موجود في متغيرات البيئة.`;
+    if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errorText);
+    else await tgSend(ambassadorId, errorText);
     return;
   }
 
@@ -279,7 +298,7 @@ export async function generateRadioBroadcast(userProfile) {
             contents: promptText,
             config: { responseMimeType: 'application/json', temperature: 0.8 }
           }),
-          15000,
+          16000,
           `استغرق الموديل ${mName} وقتًا أطول من اللازم`
         );
         const parsed = JSON.parse(response.text);
@@ -299,7 +318,9 @@ export async function generateRadioBroadcast(userProfile) {
 
   if (!sections) {
     const errorMsg = lastError?.message || 'خطأ غير معروف في الاتصال بـ Gemini API';
-    await tgSend(ambassadorId, `❌ حدث خطأ أو انقضت مهلة الاتصال بـ Gemini API:\n[${errorMsg}]\n\nيرجى إعادة المحاولة بإرسال /generate.`);
+    const errNotice = `❌ *تعذر توليد الإذاعة حالياً عبر الذكاء الاصطناعي:*\n[${errorMsg}]\n\nيرجى إعادة المحاولة بأمر /generate أو استخدام أمر /reset لتبديل الحساب.`;
+    if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errNotice);
+    else await tgSend(ambassadorId, errNotice);
     return;
   }
 
@@ -316,14 +337,21 @@ export async function generateRadioBroadcast(userProfile) {
     await fbSet(`userState/${ambassadorId}`, { step: 'ENTER_STUDENT_NAMES', broadcastId, secIndex: 0, slides });
 
     const icons = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
-    await tgSend(ambassadorId,
+    const successMsg =
       `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي بنجاح (5 فقرات)!*\n\n` +
       `👨‍🎓 *[الخطوة 2 من 3]: تسجيل أسماء الطلاب المشاركين (فقرة 1 من 5):*\n` +
-      `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`
-    );
+      `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`;
+
+    if (initialMessageId) {
+      await tgEdit(ambassadorId, initialMessageId, successMsg);
+    } else {
+      await tgSend(ambassadorId, successMsg);
+    }
   } catch (dbErr) {
     console.error('[WEBHOOK] Failed to save broadcast to Firebase:', dbErr);
-    await tgSend(ambassadorId, `❌ تم توليد النص ولكن حدث خطأ أثناء الحفظ في قاعدة البيانات: ${dbErr.message}`);
+    const dbErrText = `❌ تم توليد النص ولكن حدث خطأ أثناء الحفظ في قاعدة البيانات: ${dbErr.message}`;
+    if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, dbErrText);
+    else await tgSend(ambassadorId, dbErrText);
   }
 }
 
@@ -603,11 +631,31 @@ async function processUpdate(update) {
     }
 
     if (text === '/generate') {
-      await tgSend(chatId, `⏳ جاري توليد الإذاعة الذكية (5 فقرات)${user.className ? ` لفصل ${user.className}` : ''}...`);
-      generateRadioBroadcast(user).catch(e => {
+      // Send waiting message first, capture its message_id to edit it later
+      const waitMsg = await tgSend(chatId, `⏳ جاري توليد الإذاعة الذكية (5 فقرات)${user.className ? ` لفصل ${user.className}` : ''}...`);
+      const waitMsgId = waitMsg?.result?.message_id || null;
+      // Fire generation asynchronously — Vercel will respond 200 to Telegram immediately
+      generateRadioBroadcast(user, waitMsgId).catch(e => {
         console.error('[WEBHOOK] generateRadioBroadcast error:', e);
-        tgSend(chatId, `❌ خطأ في التوليد: ${e.message}`);
+        if (waitMsgId) tgEdit(chatId, waitMsgId, `❌ خطأ في التوليد: ${e.message}`);
+        else tgSend(chatId, `❌ خطأ في التوليد: ${e.message}`);
       });
+      return;
+    }
+
+    if (text === '/reset') {
+      // Force-reset: delete user profile and all state from Firebase so they can re-register freely
+      try {
+        await fbDel(`users/${chatId}`);
+        await fbDel(`userState/${chatId}`);
+        await tgSend(chatId,
+          `🔄 *تم إعادة تعيين جلستك بالكامل!*\n\n` +
+          `تم حذف بيانات تسجيلك من قاعدة البيانات.\n` +
+          `أرسل /start وأدخل أي كود تفعيل لتسجيل حساب جديد فوراً.`
+        );
+      } catch (e) {
+        await tgSend(chatId, `❌ فشل إعادة التعيين: ${e.message}`);
+      }
       return;
     }
 
@@ -662,22 +710,22 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 
-  try {
-    let update = req.body;
-    if (typeof update === 'string') {
-      try {
-        update = JSON.parse(update);
-      } catch (e) {
-        console.error('[WEBHOOK] Failed to parse req.body string as JSON:', e.message);
-      }
+  let update = req.body;
+  if (typeof update === 'string') {
+    try {
+      update = JSON.parse(update);
+    } catch (e) {
+      console.error('[WEBHOOK] Failed to parse req.body string as JSON:', e.message);
     }
-
-    if (update && typeof update === 'object') {
-      await processUpdate(update);
-    }
-  } catch (err) {
-    console.error('[WEBHOOK] Error processing Telegram update:', err);
   }
 
-  return res.status(200).json({ ok: true });
+  // ⚡ CRITICAL: Return 200 OK to Telegram IMMEDIATELY to prevent Vercel timeout.
+  // processUpdate runs after we respond — fire-and-forget pattern.
+  res.status(200).json({ ok: true });
+
+  if (update && typeof update === 'object') {
+    processUpdate(update).catch(err => {
+      console.error('[WEBHOOK] Error processing Telegram update:', err);
+    });
+  }
 }

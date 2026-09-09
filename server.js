@@ -364,7 +364,10 @@ bot.onText(/\/generate/, async (msg) => {
     return safeSendMessage(chatId, "⚠️ عذراً، يجب عليك تسجيل الدخول أولاً باستخدام /start.");
   }
   safeSendMessage(chatId, `⏳ جاري توليد الإذاعة الذكية عبر Gemini API (5 فقرات) ${user.className ? `لفصل ${user.className}` : ''}...`);
-  generateRadioBroadcast(user);
+  generateRadioBroadcast(user).catch(e => {
+    console.error('❌ [SERVER] generateRadioBroadcast error:', e.message);
+    safeSendMessage(chatId, `❌ خطأ في التوليد: ${e.message}`);
+  });
 });
 
 bot.onText(/\/cleanup/, async (msg) => {
@@ -381,6 +384,23 @@ bot.onText(/\/cleanup/, async (msg) => {
     safeSendMessage(chatId, `❌ خطأ: ${e.message}`);
   }
 });
+
+bot.onText(/\/reset/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    await fbDelete(`users/${chatId}`);
+    await fbDelete(`userState/${chatId}`);
+    safeSendMessage(chatId,
+      `🔄 *تم إعادة تعيين جلستك بالكامل!*\n\n` +
+      `تم حذف بيانات تسجيلك من قاعدة البيانات.\n` +
+      `أرسل /start وأدخل أي كود تفعيل لتسجيل حساب جديد فوراً.`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (e) {
+    safeSendMessage(chatId, `❌ فشل إعادة التعيين: ${e.message}`);
+  }
+});
+
 
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -670,7 +690,7 @@ async function generateRadioBroadcast(userProfile = null) {
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6KyV45Wj9TcPrPS81QdrrSQJLS0eLRNhDC9g2FVzoC8-w';
   if (!apiKey) {
     const errorMsg = "فشل التوليد من Gemini API: GEMINI_API_KEY غير موجود في متغيرات البيئة (.env)";
     console.error(`❌ ${errorMsg}`);

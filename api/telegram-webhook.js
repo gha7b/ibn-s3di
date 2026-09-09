@@ -299,19 +299,12 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   let sections = null;
   let lastError = null;
 
-  const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
-1. المقدمة والترحيب
-2. كلمة الصباح
-3. الحديث الشريف
-4. رسالة للطالب / توجيه
-5. الخاتمة
+  // ⚡ ULTRA-FAST OPTIMIZED PROMPT (Direct, short, low tokens for 5x speed)
+  const promptText = `صغ إذاعة مدرسية لثانوية ابن سعدي بموضوع (${topic}) بـ 5 فقرات قصيرة مباشرة: 1.المقدمة 2.كلمة الصباح 3.الحديث الشريف 4.توجيه للطالب 5.الخاتمة. JSON حصراً: {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
-{"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
-
-  // 🤖 1. PRIMARY METHOD: Direct REST API for gemini-3.6-flash with API Key Query Parameter
+  // 🤖 1. PRIMARY METHOD: Direct REST API for Gemini Flash with maxOutputTokens optimization
   try {
-    console.log('[WEBHOOK] Requesting Live AI Broadcast via Gemini 3.6 Flash API...');
+    console.log('[WEBHOOK] Requesting Ultra-Fast Gemini Flash Broadcast...');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
     const apiRes = await withTimeout(
       fetch(url, {
@@ -319,11 +312,15 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.8 }
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.7,
+            maxOutputTokens: 900
+          }
         })
       }),
-      14000,
-      'استغرق طلب Gemini 3.6 Flash وقتًا أطول من اللازم'
+      10000,
+      'استغرق طلب Gemini Flash وقتًا أطول من اللازم'
     );
 
     const data = await apiRes.json();
@@ -332,36 +329,40 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
       const parsed = JSON.parse(rawText);
       if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
         sections = parsed.sections.slice(0, 5);
-        console.log('[WEBHOOK] Live AI Broadcast Generation Succeeded (Gemini 3.6 Flash REST API)!');
+        console.log('[WEBHOOK] Fast Gemini Flash Generation Succeeded!');
       }
     } else {
       const errMsg = data.error?.message || `HTTP ${apiRes.status}: ${JSON.stringify(data)}`;
       lastError = new Error(errMsg);
-      console.error('[WEBHOOK] Gemini REST API error:', errMsg);
+      console.error('[WEBHOOK] Gemini Flash REST error:', errMsg);
     }
   } catch (restErr) {
     lastError = restErr;
-    console.error('[WEBHOOK] Gemini REST API Exception:', restErr.message);
+    console.error('[WEBHOOK] Gemini Flash REST Exception:', restErr.message);
   }
 
-  // 🤖 2. SECONDARY FALLBACK METHOD: GoogleGenAI SDK
+  // 🤖 2. SECONDARY FALLBACK METHOD: GoogleGenAI SDK with Flash model
   if (!sections && apiKey) {
     try {
-      console.log('[WEBHOOK] Trying GoogleGenAI SDK fallback...');
+      console.log('[WEBHOOK] Trying GoogleGenAI SDK Flash fallback...');
       const genAI = new GoogleGenAI({ apiKey });
       const sdkRes = await withTimeout(
         genAI.models.generateContent({
           model: 'gemini-3.6-flash',
           contents: promptText,
-          config: { responseMimeType: 'application/json', temperature: 0.8 }
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.7,
+            maxOutputTokens: 900
+          }
         }),
-        12000,
-        'انتهت مهلة استجابة SDK'
+        10000,
+        'انتهت مهلة استجابة SDK Flash'
       );
       const parsed = JSON.parse(sdkRes.text);
       if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
         sections = parsed.sections.slice(0, 5);
-        console.log('[WEBHOOK] Live AI Broadcast Generation Succeeded via SDK!');
+        console.log('[WEBHOOK] Fast Gemini Flash Generation Succeeded via SDK!');
       }
     } catch (sdkErr) {
       if (!lastError) lastError = sdkErr;

@@ -265,9 +265,9 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6KyV45Wj9TcPrPS81QdrrSQJLS0eLRNhDC9g2FVzoC8-w';
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6Ie0y416hD8ryDPjfgaA5ZfRQ5VHArtllFTHcDv3ijAjw';
   if (!apiKey) {
-    const errorText = `❌ فشل التوليد: GEMINI_API_KEY غير موجود في متغيرات البيئة.`;
+    const errorText = `❌ تعذر توليد الإذاعة. خطأ النظام: GEMINI_API_KEY غير موجود في متغيرات البيئة.`;
     if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errorText);
     else await tgSend(ambassadorId, errorText);
     return;
@@ -318,7 +318,7 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
 
   if (!sections) {
     const errorMsg = lastError?.message || 'خطأ غير معروف في الاتصال بـ Gemini API';
-    const errNotice = `❌ *تعذر توليد الإذاعة حالياً عبر الذكاء الاصطناعي:*\n[${errorMsg}]\n\nيرجى إعادة المحاولة بأمر /generate أو استخدام أمر /reset لتبديل الحساب.`;
+    const errNotice = `❌ تعذر توليد الإذاعة. خطأ النظام: ${errorMsg}`;
     if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errNotice);
     else await tgSend(ambassadorId, errNotice);
     return;
@@ -637,8 +637,8 @@ async function processUpdate(update) {
       // Fire generation asynchronously — Vercel will respond 200 to Telegram immediately
       generateRadioBroadcast(user, waitMsgId).catch(e => {
         console.error('[WEBHOOK] generateRadioBroadcast error:', e);
-        if (waitMsgId) tgEdit(chatId, waitMsgId, `❌ خطأ في التوليد: ${e.message}`);
-        else tgSend(chatId, `❌ خطأ في التوليد: ${e.message}`);
+        if (waitMsgId) tgEdit(chatId, waitMsgId, `❌ تعذر توليد الإذاعة. خطأ النظام: ${e.message}`);
+        else tgSend(chatId, `❌ تعذر توليد الإذاعة. خطأ النظام: ${e.message}`);
       });
       return;
     }

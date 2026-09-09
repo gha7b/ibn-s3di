@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { waitUntil } from '@vercel/functions';
 import { validateAuthCode, isExemptUser } from './auth-codes.js';
 
 // ═══════════════════════════════════════════════════════
@@ -255,6 +256,34 @@ async function sendBroadcastToSupervisors(broadcastId, broadcastData) {
 }
 
 // ═══════════════════════════════════════════════════════
+// FALLBACK BROADCAST SCRIPT (عند تعذر الاتصال بالذكاء الاصطناعي)
+// ═══════════════════════════════════════════════════════
+function getFallbackSections(topic) {
+  return [
+    {
+      title: 'المقدمة والترحيب',
+      content: `بسم الله الرحمن الرحيم، الحمد لله الذي علّم بالقلم، علّم الإنسان ما لم يعلم، والصلاة والسلام على معلم البشرية الهادي البشير. مديرنا الفاضل، معلمينا الأجلاء، إخواني الطلاب، السلام عليكم ورحمة الله وبركاته. أهلاً بكم في إذاعتنا المدرسية لهذا اليوم عبر منصة ثانوية ابن سعدي، والتي نخصصها لموضوع محوري وهو: (${topic}).`
+    },
+    {
+      title: 'كلمة الصباح',
+      content: `إن الالتزام بقيمة (${topic}) يعتبر حجرة الزاوية في بناء مجتمع مدرسي واعي ومتميز. إن التحلي بهذه القيمة يعكس وعي الطالب ورغبته الصادقة في تحقيق النجاح والارتقاء بنفسه وبمدرسته، لنكون جميعاً خيراً لسلفنا وأسوة لزملائنا.`
+    },
+    {
+      title: 'الحديث الشريف',
+      content: `عن أبي هريرة رضي الله عنه أن رسول الله صلى الله عليه وسلم قال: "إنما بعثت لأتمم مكارم الأخلاق" (رواه البيهقي). وفي هذا التوجيه النبوي الكريم دلالة على أهمية السلوك القويم والاجتهاد في تحصيل العلم والعمل به.`
+    },
+    {
+      title: 'رسالة للطالب / توجيه',
+      content: `أيها الطالب المتميز، إن نجاحك يبدأ من خطوات صغيرة تتخذها يومياً بالانضباط والاحترام والاجتهاد. اجعل من تواجدك في ثانوية ابن سعدي إضافة حقيقية تفتخر بها مستقبلاً، وكن دائماً شعلة نشاط وإيجابية في فصلك ومدرستك.`
+    },
+    {
+      title: 'الخاتمة',
+      content: `وفي ختام إذاعتنا المدرسية لهذا اليوم، نرجو أن نكون قد وفقنا في تقديم ما فيه الفائدة والنفع. نسأل الله أن يوفقنا جميعاً لما يحب ويرضى، وأن يجعل يومنا هذا مفعماً بالنشاط والتوفيق. كان معكم فصلكم المتميز، والسلام عليكم ورحمة الله وبركاته.`
+    }
+  ];
+}
+
+// ═══════════════════════════════════════════════════════
 // GEMINI BROADCAST GENERATION
 // ═══════════════════════════════════════════════════════
 export async function generateRadioBroadcast(userProfile, initialMessageId = null) {
@@ -266,14 +295,13 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   const broadcastId = 'radio_' + Date.now();
 
   const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6Ie0y416hD8ryDPjfgaA5ZfRQ5VHArtllFTHcDv3ijAjw';
-  if (!apiKey) {
-    const errorText = `❌ تعذر توليد الإذاعة. خطأ النظام: GEMINI_API_KEY غير موجود في متغيرات البيئة.`;
-    if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errorText);
-    else await tgSend(ambassadorId, errorText);
-    return;
-  }
 
-  const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
+  let sections = null;
+  let lastError = null;
+  let isFallback = false;
+
+  if (apiKey) {
+    const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
 1. المقدمة والترحيب
 2. كلمة الصباح
 3. الحديث الشريف
@@ -283,12 +311,9 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  const genAI = new GoogleGenAI({ apiKey });
-  const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
-  let sections = null;
-  let lastError = null;
+    const genAI = new GoogleGenAI({ apiKey });
+    const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
 
-  try {
     for (const mName of modelNames) {
       try {
         console.log(`[WEBHOOK] Calling Gemini model: ${mName}`);
@@ -298,8 +323,8 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
             contents: promptText,
             config: { responseMimeType: 'application/json', temperature: 0.8 }
           }),
-          16000,
-          `استغرق الموديل ${mName} وقتًا أطول من اللازم`
+          14000,
+          `انتهت مهلة استجابة الموديل ${mName}`
         );
         const parsed = JSON.parse(response.text);
         if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
@@ -312,23 +337,31 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
         console.error(`[WEBHOOK] Gemini error (${mName}):`, err.message);
       }
     }
-  } catch (overallErr) {
-    lastError = overallErr;
+  } else {
+    lastError = new Error('GEMINI_API_KEY غير موجود في متغيرات البيئة');
   }
 
+  // ⚠️ إذا فشل التوليد من الذكاء الاصطناعي، أبلغ السفير بالخطأ الصريح واستخدم النص الاحتياطي بدلاً من التعليق
   if (!sections) {
-    const errorMsg = lastError?.message || 'خطأ غير معروف في الاتصال بـ Gemini API';
-    const errNotice = `❌ تعذر توليد الإذاعة. خطأ النظام: ${errorMsg}`;
+    isFallback = true;
+    const errorMsg = lastError?.message || 'تعذر الاتصال بـ Google Gemini API';
+    console.warn(`[WEBHOOK] AI generation failed, resorting to Fallback Script. Error: ${errorMsg}`);
+
+    // إبلاغ السفير بالنص الصريح للخطأ المراد
+    const errNotice = `❌ *فشل التوليد من الذكاء الاصطناعي:*\n\`${errorMsg}\`\n\n⚠️ *جارٍ استخدام النص الإذاعي الاحتياطي المجهز آلياً لتفادي تعطيل العمل الميداني...*`;
     if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errNotice);
     else await tgSend(ambassadorId, errNotice);
-    return;
+
+    // استخدام النص الاحتياطي القياسي
+    sections = getFallbackSections(topic);
   }
 
   try {
     const slides = sections.map(sec => ({ student: 'بانتظار إدخال الاسم', title: sec.title, content: sec.content }));
     const broadcastData = {
       ambassadorId, class: classLabel, grade, date: dateStr,
-      status: 'pending', approved: false, topic, slides, timestamp: Date.now()
+      status: 'pending', approved: false, topic, slides, timestamp: Date.now(),
+      generatedVia: isFallback ? 'fallback_template' : 'gemini_ai'
     };
 
     await fbSet(`radios/${broadcastId}`, broadcastData);
@@ -337,21 +370,19 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
     await fbSet(`userState/${ambassadorId}`, { step: 'ENTER_STUDENT_NAMES', broadcastId, secIndex: 0, slides });
 
     const icons = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+    const banner = isFallback
+      ? `⚠️ *تم استخدام نص إذاعي مجهز آلياً لتعذر الاتصال بالذكاء الاصطناعي حالياً.*\n\n`
+      : `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي بنجاح (5 فقرات)!*\n\n`;
+
     const successMsg =
-      `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي بنجاح (5 فقرات)!*\n\n` +
+      banner +
       `👨‍🎓 *[الخطوة 2 من 3]: تسجيل أسماء الطلاب المشاركين (فقرة 1 من 5):*\n` +
       `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`;
 
-    if (initialMessageId) {
-      await tgEdit(ambassadorId, initialMessageId, successMsg);
-    } else {
-      await tgSend(ambassadorId, successMsg);
-    }
+    await tgSend(ambassadorId, successMsg);
   } catch (dbErr) {
     console.error('[WEBHOOK] Failed to save broadcast to Firebase:', dbErr);
-    const dbErrText = `❌ تم توليد النص ولكن حدث خطأ أثناء الحفظ في قاعدة البيانات: ${dbErr.message}`;
-    if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, dbErrText);
-    else await tgSend(ambassadorId, dbErrText);
+    await tgSend(ambassadorId, `❌ حدث خطأ أثناء حفظ الإذاعة في قاعدة البيانات: ${dbErr.message}`);
   }
 }
 
@@ -686,7 +717,7 @@ async function processUpdate(update) {
 }
 
 // ═══════════════════════════════════════════════════════
-// MAIN HANDLER — await processUpdate THEN return 200
+// MAIN HANDLER — Fast Response Pattern + @vercel/functions waitUntil
 // ═══════════════════════════════════════════════════════
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -719,14 +750,24 @@ export default async function handler(req, res) {
     }
   }
 
+  // ⚡ FAST RESPONSE PATTERN:
+  // Return 200 OK to Telegram immediately so Telegram does NOT timeout or retry
+  res.status(200).json({ ok: true });
+
   if (update && typeof update === 'object') {
     try {
-      await processUpdate(update);
+      // Execute processUpdate inside Vercel's waitUntil so lambda stays alive until AI & Firebase finish
+      if (typeof waitUntil === 'function') {
+        waitUntil(processUpdate(update));
+      } else {
+        processUpdate(update).catch(err => {
+          console.error('[WEBHOOK] Error processing Telegram update:', err);
+        });
+      }
     } catch (err) {
-      console.error('[WEBHOOK] Error processing Telegram update:', err);
+      console.error('[WEBHOOK] Error dispatching update processing:', err);
     }
   }
-
-  return res.status(200).json({ ok: true });
 }
+
 

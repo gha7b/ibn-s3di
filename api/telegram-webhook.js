@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { validateAuthCode } from './auth-codes.js';
+import { validateAuthCode, isExemptUser } from './auth-codes.js';
 
 // ═══════════════════════════════════════════════════════
 // ENVIRONMENT VARIABLES — validated at startup
@@ -14,6 +14,14 @@ console.log('[WEBHOOK] ENV check — BOT_TOKEN:', TELEGRAM_BOT_TOKEN ? '✅ set'
 console.log('[WEBHOOK] ENV check — ADMIN_CHAT_ID:', ADMIN_CHAT_ID ? '✅ set' : '❌ MISSING');
 console.log('[WEBHOOK] ENV check — GEMINI_API_KEY:', GEMINI_API_KEY ? '✅ set' : '❌ MISSING');
 console.log('[WEBHOOK] ENV check — FIREBASE_DB_URL:', FIREBASE_DB_URL);
+
+// Helper for promise timeout race
+function withTimeout(promise, ms = 20000, errorMsg = 'انتهت مهلة استجابة Gemini API') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))
+  ]);
+}
 
 // Initialize GoogleGenAI SDK
 const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
@@ -240,6 +248,12 @@ export async function generateRadioBroadcast(userProfile) {
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  if (!apiKey) {
+    await tgSend(ambassadorId, `❌ فشل التوليد: GEMINI_API_KEY غير موجود في متغيرات البيئة (process.env).`);
+    return;
+  }
+
   const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
 1. المقدمة والترحيب
 2. كلمة الصباح
@@ -250,57 +264,67 @@ export async function generateRadioBroadcast(userProfile) {
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  if (!ai) {
-    await tgSend(ambassadorId, `❌ فشل التوليد: GEMINI_API_KEY غير موجود في متغيرات البيئة.`);
-    return;
-  }
-
-  const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+  const genAI = new GoogleGenAI({ apiKey });
+  const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
   let sections = null;
   let lastError = null;
 
-  for (const mName of modelNames) {
-    try {
-      console.log(`[WEBHOOK] Calling Gemini model: ${mName}`);
-      const response = await ai.models.generateContent({
-        model: mName,
-        contents: promptText,
-        config: { responseMimeType: 'application/json', temperature: 0.8 }
-      });
-      const parsed = JSON.parse(response.text);
-      if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
-        sections = parsed.sections.slice(0, 5);
-        console.log(`[WEBHOOK] Gemini generation succeeded: ${mName}`);
-        break;
+  try {
+    for (const mName of modelNames) {
+      try {
+        console.log(`[WEBHOOK] Calling Gemini model: ${mName}`);
+        const response = await withTimeout(
+          genAI.models.generateContent({
+            model: mName,
+            contents: promptText,
+            config: { responseMimeType: 'application/json', temperature: 0.8 }
+          }),
+          15000,
+          `استغرق الموديل ${mName} وقتًا أطول من اللازم`
+        );
+        const parsed = JSON.parse(response.text);
+        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
+          sections = parsed.sections.slice(0, 5);
+          console.log(`[WEBHOOK] Gemini generation succeeded: ${mName}`);
+          break;
+        }
+      } catch (err) {
+        lastError = err;
+        console.error(`[WEBHOOK] Gemini error (${mName}):`, err.message);
       }
-    } catch (err) {
-      lastError = err;
-      console.error(`[WEBHOOK] Gemini error (${mName}):`, err.message);
     }
+  } catch (overallErr) {
+    lastError = overallErr;
   }
 
   if (!sections) {
-    await tgSend(ambassadorId, `❌ فشل التوليد من Gemini API: ${lastError?.message || 'Unknown Error'}`);
+    const errorMsg = lastError?.message || 'خطأ غير معروف في الاتصال بـ Gemini API';
+    await tgSend(ambassadorId, `❌ حدث خطأ أو انقضت مهلة الاتصال بـ Gemini API:\n[${errorMsg}]\n\nيرجى إعادة المحاولة بإرسال /generate.`);
     return;
   }
 
-  const slides = sections.map(sec => ({ student: 'بانتظار إدخال الاسم', title: sec.title, content: sec.content }));
-  const broadcastData = {
-    ambassadorId, class: classLabel, grade, date: dateStr,
-    status: 'pending', approved: false, topic, slides, timestamp: Date.now()
-  };
+  try {
+    const slides = sections.map(sec => ({ student: 'بانتظار إدخال الاسم', title: sec.title, content: sec.content }));
+    const broadcastData = {
+      ambassadorId, class: classLabel, grade, date: dateStr,
+      status: 'pending', approved: false, topic, slides, timestamp: Date.now()
+    };
 
-  await fbSet(`radios/${broadcastId}`, broadcastData);
+    await fbSet(`radios/${broadcastId}`, broadcastData);
 
-  // Set Ambassador State to enter student names step-by-step
-  await fbSet(`userState/${ambassadorId}`, { step: 'ENTER_STUDENT_NAMES', broadcastId, secIndex: 0, slides });
+    // Set Ambassador State to enter student names step-by-step
+    await fbSet(`userState/${ambassadorId}`, { step: 'ENTER_STUDENT_NAMES', broadcastId, secIndex: 0, slides });
 
-  const icons = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
-  await tgSend(ambassadorId,
-    `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي بنجاح (5 فقرات)!*\n\n` +
-    `👨‍🎓 *[الخطوة 2 من 3]: تسجيل أسماء الطلاب المشاركين (فقرة 1 من 5):*\n` +
-    `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`
-  );
+    const icons = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+    await tgSend(ambassadorId,
+      `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي بنجاح (5 فقرات)!*\n\n` +
+      `👨‍🎓 *[الخطوة 2 من 3]: تسجيل أسماء الطلاب المشاركين (فقرة 1 من 5):*\n` +
+      `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`
+    );
+  } catch (dbErr) {
+    console.error('[WEBHOOK] Failed to save broadcast to Firebase:', dbErr);
+    await tgSend(ambassadorId, `❌ تم توليد النص ولكن حدث خطأ أثناء الحفظ في قاعدة البيانات: ${dbErr.message}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -530,29 +554,33 @@ async function processUpdate(update) {
 
     // ── COMMANDS ──
     if (text === '/start') {
-      if (user) {
+      const exempt = isExemptUser(chatId, user);
+      if (user && !exempt) {
         let roleDesc = user.isSuperAdmin || user.role === 'admin' ? '👑 المشرف العام (Super Admin)' :
           user.role === 'ambassador' ? `🎓 سفير فصل (${user.className}) — ${user.gradeName}` :
           `👔 مشرف ${user.gradeScope || user.gradeName}`;
         await tgSend(chatId,
-          `👋 *أهلاً بك مجدداً!*\nالصفة: ${roleDesc}\n\n` +
-          `📋 *الأوامر:*\n` +
+          `👋 *أهلاً بك، أنت مسجل حالياً كـ ${roleDesc}*\n\n` +
+          `📋 *الأوامر المتاحة لك:*\n` +
           `- /generate — توليد إذاعة ذكية\n` +
           (user.role !== 'ambassador' ? `- /set_topic — تغيير موضوع الأسبوع\n` : '') +
           `- /my_profile — بيانات حسابك\n- /cleanup — تنظيف الإذاعات المعلقة`
         );
       } else {
-        await tgSend(chatId,
-          `👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\nاختر نوع التسجيل للبدء:`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🎓 تسجيل كـ سفير فصل', callback_data: 'login_type:ambassador' }],
-                [{ text: '👔 تسجيل كـ مشرف مرحلة', callback_data: 'login_type:supervisor' }]
-              ]
-            }
+        await fbSet(`userState/${chatId}`, { step: 'AWAITING_CODE' });
+        let roleDesc = user ? (user.isSuperAdmin || user.role === 'admin' ? 'المشرف العام (Super Admin)' : `مستخدم كود تجريبي (${user.code})`) : null;
+        let welcomeMsg = exempt && user
+          ? `🔄 *أنت الآن في وضع تبديل الحسابات (${roleDesc}):*\n\nأدخل كود التفعيل الجديد فوراً لتغيير الحساب، أو اختر نوع التسجيل:`
+          : `👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\nأدخل كود التفعيل المخصص لك فوراً، أو اختر نوع التسجيل للبدء:`;
+
+        await tgSend(chatId, welcomeMsg, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🎓 تسجيل كـ سفير فصل', callback_data: 'login_type:ambassador' }],
+              [{ text: '👔 تسجيل كـ مشرف مرحلة', callback_data: 'login_type:supervisor' }]
+            ]
           }
-        );
+        });
       }
       return;
     }

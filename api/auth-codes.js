@@ -64,3 +64,20 @@ export function validateAuthCode(code, selectedRole) {
 
   return entry;
 }
+
+export const TEST_CODES = ['101020', '110101', '990101'];
+
+/**
+ * Checks if a user is exempt from account locking (Super Admin or test codes)
+ * @param {string|number} chatId 
+ * @param {object|null} user 
+ * @returns {boolean}
+ */
+export function isExemptUser(chatId, user) {
+  const adminChatId = process.env.ADMIN_CHAT_ID;
+  if (adminChatId && String(chatId) === String(adminChatId)) return true;
+  if (user && (user.isSuperAdmin || user.role === 'admin')) return true;
+  if (user && user.code && TEST_CODES.includes(String(user.code).trim())) return true;
+  return false;
+}
+

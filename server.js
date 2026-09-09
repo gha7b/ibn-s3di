@@ -273,6 +273,22 @@ async function safeSendMessage(chatId, text, options = {}) {
   }
 }
 
+const TEST_CODES = ['101020', '110101', '990101'];
+
+function isExemptUser(chatId, user) {
+  if (ADMIN_CHAT_ID && String(chatId) === String(ADMIN_CHAT_ID)) return true;
+  if (user && (user.isSuperAdmin || user.role === 'admin')) return true;
+  if (user && user.code && TEST_CODES.includes(String(user.code).trim())) return true;
+  return false;
+}
+
+function withTimeout(promise, ms = 20000, errorMsg = 'انتهت مهلة استجابة Gemini API') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))
+  ]);
+}
+
 function isAdmin(chatId) {
   return String(chatId) === String(ADMIN_CHAT_ID);
 }
@@ -281,16 +297,16 @@ function isAdmin(chatId) {
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const user = await getUserProfile(chatId);
+  const exempt = isExemptUser(chatId, user);
 
-  if (user) {
+  if (user && !exempt) {
     let userRoleDesc = '';
-    if (user.role === 'admin') userRoleDesc = '👑 مدير النظام الرئيسي';
+    if (user.role === 'admin' || user.isSuperAdmin) userRoleDesc = '👑 مدير النظام الرئيسي (Super Admin)';
     else if (user.role === 'ambassador') userRoleDesc = `🎓 سفير فصل (${user.className}) — ${user.gradeName}`;
     else if (user.role === 'supervisor') userRoleDesc = `👔 مشرف ${user.gradeScope || user.gradeName}`;
 
     safeSendMessage(chatId,
-      `👋 *أهلاً بك مجدداً في منصة الإذاعة المدرسية الذكية*\n` +
-      `الصفة: ${userRoleDesc}\n\n` +
+      `👋 *أهلاً بك، أنت مسجل حالياً كـ ${userRoleDesc}*\n\n` +
       `📋 *الأوامر المتاحة لك:*\n` +
       `- \`/generate\` — توليد إذاعة مدرسية ذكية عبر Gemini API\n` +
       (user.role === 'admin' || user.role === 'supervisor' ? `- \`/set_topic\` — تغيير موضوع/قيمة الأسبوع\n` : '') +
@@ -299,19 +315,21 @@ bot.onText(/\/start/, async (msg) => {
       { parse_mode: 'Markdown' }
     );
   } else {
-    safeSendMessage(chatId,
-      `👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\n` +
-      `لتفعيل حسابك والبدء في الاستخدام، يرجى اختيار نوع التسجيل:`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🎓 تسجيل كـ سفير فصل", callback_data: "login_type:ambassador" }],
-            [{ text: "👔 تسجيل كـ مشرف مرحلة", callback_data: "login_type:supervisor" }]
-          ]
-        }
+    await fbSet(`userState/${chatId}`, { step: 'AWAITING_CODE' });
+    let roleDesc = user ? (user.isSuperAdmin || user.role === 'admin' ? 'المشرف العام (Super Admin)' : `مستخدم كود تجريبي (${user.code})`) : null;
+    let welcomeMsg = exempt && user
+      ? `🔄 *أنت الآن في وضع تبديل الحسابات (${roleDesc}):*\n\nأدخل كود التفعيل الجديد فوراً لتغيير الحساب، أو اختر نوع التسجيل:`
+      : `👋 *أهلاً بك في منصة الإذاعة المدرسية الذكية (ثانوية ابن سعدي)*\n\nأدخل كود التفعيل المخصص لك فوراً، أو اختر نوع التسجيل للبدء:`;
+
+    safeSendMessage(chatId, welcomeMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🎓 تسجيل كـ سفير فصل", callback_data: "login_type:ambassador" }],
+          [{ text: "👔 تسجيل كـ مشرف مرحلة", callback_data: "login_type:supervisor" }]
+        ]
       }
-    );
+    });
   }
 });
 
@@ -652,7 +670,8 @@ async function generateRadioBroadcast(userProfile = null) {
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  if (!ai) {
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  if (!apiKey) {
     const errorMsg = "فشل التوليد من Gemini API: GEMINI_API_KEY غير موجود في متغيرات البيئة (.env)";
     console.error(`❌ ${errorMsg}`);
     if (userProfile?.telegramId) {
@@ -661,37 +680,44 @@ async function generateRadioBroadcast(userProfile = null) {
     return;
   }
 
-  const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+  const genAI = new GoogleGenAI({ apiKey });
+  const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
   let sections = null;
   let lastError = null;
 
-  for (const mName of modelNames) {
-    try {
-      console.log(`🤖 Calling Gemini API via @google/genai SDK model: ${mName}...`);
+  try {
+    for (const mName of modelNames) {
+      try {
+        console.log(`🤖 Calling Gemini API via @google/genai SDK model: ${mName}...`);
 
-      const response = await ai.models.generateContent({
-        model: mName,
-        contents: promptText,
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.8
+        const response = await withTimeout(
+          genAI.models.generateContent({
+            model: mName,
+            contents: promptText,
+            config: {
+              responseMimeType: "application/json",
+              temperature: 0.8
+            }
+          }),
+          15000,
+          `استغرق الموديل ${mName} وقتًا أطول من اللازم`
+        );
+
+        if (response?.text) {
+          const parsed = JSON.parse(response.text);
+          if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
+            sections = parsed.sections.slice(0, 5);
+            console.log(`✅ Gemini API generation succeeded using model: ${mName}`);
+            break;
+          }
         }
-      });
-
-      const responseText = response.text;
-
-      if (responseText) {
-        const parsed = JSON.parse(responseText);
-        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
-          sections = parsed.sections.slice(0, 5);
-          console.log(`✅ Gemini API generation succeeded using model: ${mName}`);
-          break;
-        }
+      } catch (err) {
+        lastError = err;
+        console.error(`❌ Gemini API Call Error (${mName}):`, err.message || err);
       }
-    } catch (err) {
-      lastError = err;
-      console.error(`❌ Gemini API Call Error (${mName}):`, err.message || err);
     }
+  } catch (overallErr) {
+    lastError = overallErr;
   }
 
   if (!sections) {

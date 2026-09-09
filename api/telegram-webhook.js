@@ -294,14 +294,12 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6Ie0y416hD8ryDPjfgaA5ZfRQ5VHArtllFTHcDv3ijAjw';
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AIzaSyB6hNRMreZIFLyAljQQcELgJfSbO0S3dSk';
 
   let sections = null;
   let lastError = null;
-  let isFallback = false;
 
-  if (apiKey) {
-    const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
+  const promptText = `قم بصياغة إذاعة مدرسية متكاملة لثانوية ابن سعدي عن موضوع: (${topic}). اكتب نصاً إبداعياً جديداً بالكامل لكل فقرة من الفقرات الخمس إجباريًا:
 1. المقدمة والترحيب
 2. كلمة الصباح
 3. الحديث الشريف
@@ -311,49 +309,76 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-    const genAI = new GoogleGenAI({ apiKey });
-    const modelNames = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
+  // 🤖 1. PRIMARY METHOD: Direct REST API for gemini-3.6-flash with API Key Query Parameter
+  try {
+    console.log('[WEBHOOK] Requesting Live AI Broadcast via Gemini 3.6 Flash API...');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+    const apiRes = await withTimeout(
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.8 }
+        })
+      }),
+      14000,
+      'استغرق طلب Gemini 3.6 Flash وقتًا أطول من اللازم'
+    );
 
-    for (const mName of modelNames) {
-      try {
-        console.log(`[WEBHOOK] Calling Gemini model: ${mName}`);
-        const response = await withTimeout(
-          genAI.models.generateContent({
-            model: mName,
-            contents: promptText,
-            config: { responseMimeType: 'application/json', temperature: 0.8 }
-          }),
-          14000,
-          `انتهت مهلة استجابة الموديل ${mName}`
-        );
-        const parsed = JSON.parse(response.text);
-        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
-          sections = parsed.sections.slice(0, 5);
-          console.log(`[WEBHOOK] Gemini generation succeeded: ${mName}`);
-          break;
-        }
-      } catch (err) {
-        lastError = err;
-        console.error(`[WEBHOOK] Gemini error (${mName}):`, err.message);
+    const data = await apiRes.json();
+    if (apiRes.ok && data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      const rawText = data.candidates[0].content.parts[0].text;
+      const parsed = JSON.parse(rawText);
+      if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
+        sections = parsed.sections.slice(0, 5);
+        console.log('[WEBHOOK] Live AI Broadcast Generation Succeeded (Gemini 3.6 Flash REST API)!');
       }
+    } else {
+      const errMsg = data.error?.message || `HTTP ${apiRes.status}: ${JSON.stringify(data)}`;
+      lastError = new Error(errMsg);
+      console.error('[WEBHOOK] Gemini REST API error:', errMsg);
     }
-  } else {
-    lastError = new Error('GEMINI_API_KEY غير موجود في متغيرات البيئة');
+  } catch (restErr) {
+    lastError = restErr;
+    console.error('[WEBHOOK] Gemini REST API Exception:', restErr.message);
   }
 
-  // ⚠️ إذا فشل التوليد من الذكاء الاصطناعي، أبلغ السفير بالخطأ الصريح واستخدم النص الاحتياطي بدلاً من التعليق
-  if (!sections) {
-    isFallback = true;
-    const errorMsg = lastError?.message || 'تعذر الاتصال بـ Google Gemini API';
-    console.warn(`[WEBHOOK] AI generation failed, resorting to Fallback Script. Error: ${errorMsg}`);
+  // 🤖 2. SECONDARY FALLBACK METHOD: GoogleGenAI SDK
+  if (!sections && apiKey) {
+    try {
+      console.log('[WEBHOOK] Trying GoogleGenAI SDK fallback...');
+      const genAI = new GoogleGenAI({ apiKey });
+      const sdkRes = await withTimeout(
+        genAI.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: promptText,
+          config: { responseMimeType: 'application/json', temperature: 0.8 }
+        }),
+        12000,
+        'انتهت مهلة استجابة SDK'
+      );
+      const parsed = JSON.parse(sdkRes.text);
+      if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
+        sections = parsed.sections.slice(0, 5);
+        console.log('[WEBHOOK] Live AI Broadcast Generation Succeeded via SDK!');
+      }
+    } catch (sdkErr) {
+      if (!lastError) lastError = sdkErr;
+      console.error('[WEBHOOK] Gemini SDK Exception:', sdkErr.message);
+    }
+  }
 
-    // إبلاغ السفير بالنص الصريح للخطأ المراد
-    const errNotice = `❌ *فشل التوليد من الذكاء الاصطناعي:*\n\`${errorMsg}\`\n\n⚠️ *جارٍ استخدام النص الإذاعي الاحتياطي المجهز آلياً لتفادي تعطيل العمل الميداني...*`;
+  // ⚠️ إذا حدث خطأ غير متوقع في التوليد الحي، أبلغ السفير بالخطأ الصريح دون فرض نصوص جاهزة
+  if (!sections) {
+    const errorMsg = lastError?.message || 'تعذر الاتصال بالذكاء الاصطناعي حالياً';
+    const errNotice =
+      `❌ *تعذر توليد الإذاعة بالذكاء الاصطناعي:*\n\`${errorMsg}\`\n\n` +
+      `💡 أرسل /generate لإعادة المحاولة فوراً وسيقوم الذكاء الاصطناعي بصياغة إذاعة جديدة.`;
+
     if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errNotice);
     else await tgSend(ambassadorId, errNotice);
-
-    // استخدام النص الاحتياطي القياسي
-    sections = getFallbackSections(topic);
+    return;
   }
 
   try {
@@ -361,7 +386,7 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
     const broadcastData = {
       ambassadorId, class: classLabel, grade, date: dateStr,
       status: 'pending', approved: false, topic, slides, timestamp: Date.now(),
-      generatedVia: isFallback ? 'fallback_template' : 'gemini_ai'
+      generatedVia: 'gemini_3_6_flash_live_ai'
     };
 
     await fbSet(`radios/${broadcastId}`, broadcastData);
@@ -370,16 +395,16 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
     await fbSet(`userState/${ambassadorId}`, { step: 'ENTER_STUDENT_NAMES', broadcastId, secIndex: 0, slides });
 
     const icons = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
-    const banner = isFallback
-      ? `⚠️ *تم استخدام نص إذاعي مجهز آلياً لتعذر الاتصال بالذكاء الاصطناعي حالياً.*\n\n`
-      : `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي بنجاح (5 فقرات)!*\n\n`;
-
     const successMsg =
-      banner +
+      `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي الحي بنجاح عبر Gemini AI (5 فقرات)!*\n\n` +
       `👨‍🎓 *[الخطوة 2 من 3]: تسجيل أسماء الطلاب المشاركين (فقرة 1 من 5):*\n` +
       `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`;
 
-    await tgSend(ambassadorId, successMsg);
+    if (initialMessageId) {
+      await tgEdit(ambassadorId, initialMessageId, successMsg);
+    } else {
+      await tgSend(ambassadorId, successMsg);
+    }
   } catch (dbErr) {
     console.error('[WEBHOOK] Failed to save broadcast to Firebase:', dbErr);
     await tgSend(ambassadorId, `❌ حدث خطأ أثناء حفظ الإذاعة في قاعدة البيانات: ${dbErr.message}`);

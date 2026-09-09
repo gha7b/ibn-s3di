@@ -690,7 +690,7 @@ async function generateRadioBroadcast(userProfile = null) {
 أرجع النتيجة حصراً وبدون أي مقدمات أو ماركداون إضافي بصيغة JSON التالية:
 {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AQ.Ab8RN6Ie0y416hD8ryDPjfgaA5ZfRQ5VHArtllFTHcDv3ijAjw';
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AIzaSyB6hNRMreZIFLyAljQQcELgJfSbO0S3dSk';
   if (!apiKey) {
     const errorMsg = "فشل التوليد من Gemini API: GEMINI_API_KEY غير موجود في متغيرات البيئة (.env)";
     console.error(`❌ ${errorMsg}`);

@@ -302,46 +302,53 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   // ⚡ ULTRA-FAST OPTIMIZED PROMPT (Direct, short, low tokens for 5x speed)
   const promptText = `صغ إذاعة مدرسية لثانوية ابن سعدي بموضوع (${topic}) بـ 5 فقرات قصيرة مباشرة: 1.المقدمة 2.كلمة الصباح 3.الحديث الشريف 4.توجيه للطالب 5.الخاتمة. JSON حصراً: {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
-  // 🤖 1. PRIMARY METHOD: Direct REST API for Gemini 3 Flash / 3.6 Flash
-  const targetModels = ['gemini-3-flash', 'gemini-3.6-flash'];
+  // 🤖 1. PRIMARY METHOD: Direct REST API with Automatic Retry for 503 High Demand
+  const targetModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
   for (const mName of targetModels) {
-    try {
-      console.log(`[WEBHOOK] Requesting Live AI Broadcast via ${mName}...`);
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${mName}:generateContent?key=${apiKey}`;
-      const apiRes = await withTimeout(
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              temperature: 0.7,
-              maxOutputTokens: 1000
-            }
-          })
-        }),
-        6000,
-        `انتهت مهلة استجابة ${mName}`
-      );
+    if (sections) break;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[WEBHOOK] Requesting Live AI Broadcast via ${mName} (Attempt ${attempt}/3)...`);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${mName}:generateContent?key=${apiKey}`;
+        const apiRes = await withTimeout(
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: promptText }] }],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.7,
+                maxOutputTokens: 1000
+              }
+            })
+          }),
+          14000,
+          `انتهت مهلة استجابة ${mName}`
+        );
 
-      const data = await apiRes.json();
-      if (apiRes.ok && data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-        const rawText = data.candidates[0].content.parts[0].text;
-        const parsed = JSON.parse(rawText);
-        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
-          sections = parsed.sections.slice(0, 5);
-          console.log(`[WEBHOOK] Fast Gemini 3 Flash Broadcast Generation Succeeded (${mName})!`);
-          break;
+        const data = await apiRes.json();
+        if (apiRes.ok && data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+          const rawText = data.candidates[0].content.parts[0].text;
+          const parsed = JSON.parse(rawText);
+          if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
+            sections = parsed.sections.slice(0, 5);
+            console.log(`[WEBHOOK] Live AI Broadcast Generation Succeeded (${mName} - Attempt ${attempt})!`);
+            break;
+          }
+        } else {
+          const errMsg = data.error?.message || `HTTP ${apiRes.status}`;
+          lastError = new Error(errMsg);
+          console.warn(`[WEBHOOK] Gemini (${mName}) Attempt ${attempt} failed: ${errMsg}`);
+          // If 503 high demand, wait 1.5s then retry
+          if (apiRes.status === 503 || errMsg.includes('503') || errMsg.includes('high demand')) {
+            await new Promise(r => setTimeout(r, 1500));
+          }
         }
-      } else {
-        const errMsg = data.error?.message || `HTTP ${apiRes.status}`;
-        lastError = new Error(errMsg);
-        console.error(`[WEBHOOK] Gemini Flash (${mName}) error:`, errMsg);
+      } catch (restErr) {
+        lastError = restErr;
+        console.error(`[WEBHOOK] Gemini (${mName}) Exception on attempt ${attempt}:`, restErr.message);
       }
-    } catch (restErr) {
-      lastError = restErr;
-      console.error(`[WEBHOOK] Gemini Flash (${mName}) Exception:`, restErr.message);
     }
   }
 
@@ -360,7 +367,7 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
             maxOutputTokens: 1000
           }
         }),
-        6000,
+        16000,
         'انتهت مهلة استجابة SDK Flash'
       );
       const parsed = JSON.parse(sdkRes.text);

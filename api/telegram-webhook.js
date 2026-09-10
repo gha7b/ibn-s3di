@@ -303,7 +303,7 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   const promptText = `صغ إذاعة مدرسية لثانوية ابن سعدي بموضوع (${topic}) بـ 5 فقرات قصيرة مباشرة: 1.المقدمة 2.كلمة الصباح 3.الحديث الشريف 4.توجيه للطالب 5.الخاتمة. JSON حصراً: {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
 
   // 🤖 1. PRIMARY METHOD: Direct REST API with Automatic Retry for 503 High Demand
-  const targetModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+  const targetModels = ['gemini-1.5-flash'];
   for (const mName of targetModels) {
     if (sections) break;
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -359,7 +359,7 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
       const genAI = new GoogleGenAI({ apiKey });
       const sdkRes = await withTimeout(
         genAI.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: 'gemini-1.5-flash',
           contents: promptText,
           config: {
             responseMimeType: 'application/json',
@@ -700,13 +700,13 @@ async function processUpdate(update) {
 
     if (text === '/generate') {
       // Send waiting message first, capture its message_id to edit it later
-      const waitMsg = await tgSend(chatId, `⏳ جاري توليد الإذاعة الذكية (5 فقرات)${user.className ? ` لفصل ${user.className}` : ''}...`);
+      const waitMsg = await tgSend(chatId, `⏳ جاري التوليد بالذكاء الاصطناعي...`);
       const waitMsgId = waitMsg?.result?.message_id || null;
       // Fire generation asynchronously — Vercel will respond 200 to Telegram immediately
       generateRadioBroadcast(user, waitMsgId).catch(e => {
         console.error('[WEBHOOK] generateRadioBroadcast error:', e);
-        if (waitMsgId) tgEdit(chatId, waitMsgId, `❌ تعذر توليد الإذاعة. خطأ النظام: ${e.message}`);
-        else tgSend(chatId, `❌ تعذر توليد الإذاعة. خطأ النظام: ${e.message}`);
+        if (waitMsgId) tgEdit(chatId, waitMsgId, `❌ تعذر التوليد: ${e.message}`);
+        else tgSend(chatId, `❌ تعذر التوليد: ${e.message}`);
       });
       return;
     }

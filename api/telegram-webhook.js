@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
 import { waitUntil } from '@vercel/functions';
 import { validateAuthCode, isExemptUser } from './auth-codes.js';
 
@@ -7,13 +6,11 @@ import { validateAuthCode, isExemptUser } from './auth-codes.js';
 // ═══════════════════════════════════════════════════════
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const FIREBASE_DB_URL = process.env.FIREBASE_DB_URL || 'https://abns3di-default-rtdb.europe-west1.firebasedatabase.app';
 const SITE_URL = process.env.SITE_URL || 'https://ibn-s3di.vercel.app';
 
 console.log('[WEBHOOK] ENV check — BOT_TOKEN:', TELEGRAM_BOT_TOKEN ? '✅ set' : '❌ MISSING');
 console.log('[WEBHOOK] ENV check — ADMIN_CHAT_ID:', ADMIN_CHAT_ID ? '✅ set' : '❌ MISSING');
-console.log('[WEBHOOK] ENV check — GEMINI_API_KEY:', GEMINI_API_KEY ? '✅ set' : '❌ MISSING');
 console.log('[WEBHOOK] ENV check — FIREBASE_DB_URL:', FIREBASE_DB_URL);
 
 // Helper for promise timeout race
@@ -25,7 +22,6 @@ function withTimeout(promise, ms = 20000, errorMsg = 'انتهت مهلة است
 }
 
 // Initialize GoogleGenAI SDK
-const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 // ═══════════════════════════════════════════════════════
 // TELEGRAM API HELPERS
@@ -284,9 +280,9 @@ function getFallbackSections(topic) {
 }
 
 // ═══════════════════════════════════════════════════════
-// GEMINI BROADCAST GENERATION
+// MANUAL BROADCAST BUILDER
 // ═══════════════════════════════════════════════════════
-export async function generateRadioBroadcast(userProfile, initialMessageId = null) {
+async function startManualBroadcast(userProfile, chatId) {
   const topic = await getWeeklyTopic();
   const classLabel = userProfile?.className || 'فصل غير محدد';
   const grade = userProfile?.grade || 1;
@@ -294,133 +290,39 @@ export async function generateRadioBroadcast(userProfile, initialMessageId = nul
   const dateStr = new Date().toLocaleDateString('ar-SA', { timeZone: 'Asia/Riyadh' });
   const broadcastId = 'radio_' + Date.now();
 
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY || 'AIzaSyB6hNRMreZIFLyAljQQcELgJfSbO0S3dSk';
+  const slides = [
+    { title: 'المقدمة والترحيب', content: '', student: 'طالب مشارك' },
+    { title: 'كلمة الصباح', content: '', student: 'طالب مشارك' },
+    { title: 'الحديث الشريف', content: '', student: 'طالب مشارك' },
+    { title: 'رسالة للطالب / توجيه', content: '', student: 'طالب مشارك' },
+    { title: 'الخاتمة', content: '', student: 'طالب مشارك' }
+  ];
 
-  let sections = null;
-  let lastError = null;
+  const broadcastData = {
+    ambassadorId, class: classLabel, grade, date: dateStr,
+    status: 'draft', approved: false, topic, slides, timestamp: Date.now(),
+    generatedVia: 'manual'
+  };
 
-  // ⚡ ULTRA-FAST OPTIMIZED PROMPT (Direct, short, low tokens for 5x speed)
-  const promptText = `صغ إذاعة مدرسية لثانوية ابن سعدي بموضوع (${topic}) بـ 5 فقرات قصيرة مباشرة: 1.المقدمة 2.كلمة الصباح 3.الحديث الشريف 4.توجيه للطالب 5.الخاتمة. JSON حصراً: {"topic":"${topic}","sections":[{"title":"المقدمة والترحيب","content":"..."},{"title":"كلمة الصباح","content":"..."},{"title":"الحديث الشريف","content":"..."},{"title":"رسالة للطالب / توجيه","content":"..."},{"title":"الخاتمة","content":"..."}]}`;
+  await fbSet(`radios/${broadcastId}`, broadcastData);
+  await fbSet(`userState/${ambassadorId}`, { step: 'MANUAL_BUILD_STEP', broadcastId, secIndex: 0 });
 
-  // 🤖 1. PRIMARY METHOD: Direct REST API with Automatic Retry for 503 High Demand
-  const targetModels = ['gemini-1.5-flash'];
-  for (const mName of targetModels) {
-    if (sections) break;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`[WEBHOOK] Requesting Live AI Broadcast via ${mName} (Attempt ${attempt}/3)...`);
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${mName}:generateContent?key=${apiKey}`;
-        const apiRes = await withTimeout(
-          fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: promptText }] }],
-              generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.7,
-                maxOutputTokens: 1000
-              }
-            })
-          }),
-          14000,
-          `انتهت مهلة استجابة ${mName}`
-        );
+  await tgSend(ambassadorId, `📝 أدخل (الفقرة الأولى - المقدمة):`);
+}
 
-        const data = await apiRes.json();
-        if (apiRes.ok && data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-          const rawText = data.candidates[0].content.parts[0].text;
-          const parsed = JSON.parse(rawText);
-          if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
-            sections = parsed.sections.slice(0, 5);
-            console.log(`[WEBHOOK] Live AI Broadcast Generation Succeeded (${mName} - Attempt ${attempt})!`);
-            break;
-          }
-        } else {
-          const errMsg = data.error?.message || `HTTP ${apiRes.status}`;
-          lastError = new Error(errMsg);
-          console.warn(`[WEBHOOK] Gemini (${mName}) Attempt ${attempt} failed: ${errMsg}`);
-          // If 503 high demand, wait 1.5s then retry
-          if (apiRes.status === 503 || errMsg.includes('503') || errMsg.includes('high demand')) {
-            await new Promise(r => setTimeout(r, 1500));
-          }
-        }
-      } catch (restErr) {
-        lastError = restErr;
-        console.error(`[WEBHOOK] Gemini (${mName}) Exception on attempt ${attempt}:`, restErr.message);
-      }
-    }
-  }
+async function sendManualPreview(chatId, broadcastId, broadcast) {
+  const contentBody = formatBroadcast(broadcast.topic, broadcast.class, broadcast.date, broadcast.slides);
+  const msg = `🎙 *معاينة الإذاعة:*
 
-  // 🤖 2. SECONDARY FALLBACK METHOD: GoogleGenAI SDK with Flash model
-  if (!sections && apiKey) {
-    try {
-      console.log('[WEBHOOK] Trying GoogleGenAI SDK Flash fallback...');
-      const genAI = new GoogleGenAI({ apiKey });
-      const sdkRes = await withTimeout(
-        genAI.models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: promptText,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.7,
-            maxOutputTokens: 1000
-          }
-        }),
-        16000,
-        'انتهت مهلة استجابة SDK Flash'
-      );
-      const parsed = JSON.parse(sdkRes.text);
-      if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 5) {
-        sections = parsed.sections.slice(0, 5);
-        console.log('[WEBHOOK] Fast Gemini Flash Generation Succeeded via SDK!');
-      }
-    } catch (sdkErr) {
-      if (!lastError) lastError = sdkErr;
-      console.error('[WEBHOOK] Gemini SDK Exception:', sdkErr.message);
-    }
-  }
-
-  // ⚠️ إذا حدث خطأ غير متوقع في التوليد الحي، أبلغ السفير بالخطأ الصريح دون فرض نصوص جاهزة
-  if (!sections) {
-    const errorMsg = lastError?.message || 'تعذر الاتصال بالذكاء الاصطناعي حالياً';
-    const errNotice =
-      `❌ *تعذر توليد الإذاعة بالذكاء الاصطناعي:*\n\`${errorMsg}\`\n\n` +
-      `💡 أرسل /generate لإعادة المحاولة فوراً وسيقوم الذكاء الاصطناعي بصياغة إذاعة جديدة.`;
-
-    if (initialMessageId) await tgEdit(ambassadorId, initialMessageId, errNotice);
-    else await tgSend(ambassadorId, errNotice);
-    return;
-  }
-
-  try {
-    const slides = sections.map(sec => ({ student: 'بانتظار إدخال الاسم', title: sec.title, content: sec.content }));
-    const broadcastData = {
-      ambassadorId, class: classLabel, grade, date: dateStr,
-      status: 'pending', approved: false, topic, slides, timestamp: Date.now(),
-      generatedVia: 'gemini_3_6_flash_live_ai'
-    };
-
-    await fbSet(`radios/${broadcastId}`, broadcastData);
-
-    // Set Ambassador State to enter student names step-by-step
-    await fbSet(`userState/${ambassadorId}`, { step: 'ENTER_STUDENT_NAMES', broadcastId, secIndex: 0, slides });
-
-    const icons = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
-    const successMsg =
-      `✨ *[الخطوة 1 من 3]: تم توليد النص الذكي الحي بنجاح عبر Gemini AI (5 فقرات)!*\n\n` +
-      `👨‍🎓 *[الخطوة 2 من 3]: تسجيل أسماء الطلاب المشاركين (فقرة 1 من 5):*\n` +
-      `أرسل اسم الطالب المشارك لفقرة:\n*${icons[0]} ${slides[0].title}*`;
-
-    if (initialMessageId) {
-      await tgEdit(ambassadorId, initialMessageId, successMsg);
-    } else {
-      await tgSend(ambassadorId, successMsg);
-    }
-  } catch (dbErr) {
-    console.error('[WEBHOOK] Failed to save broadcast to Firebase:', dbErr);
-    await tgSend(ambassadorId, `❌ حدث خطأ أثناء حفظ الإذاعة في قاعدة البيانات: ${dbErr.message}`);
-  }
+` + contentBody;
+  const buttons = {
+    inline_keyboard: [
+      [{ text: '🟢 إرسال للمشرف للاعتماد', callback_data: `submit_manual:${broadcastId}` }],
+      [{ text: '✏️ تعديل فقرة', callback_data: `request_ambassador_edit:${broadcastId}` }],
+      [{ text: '🔴 إلغاء الإذاعة', callback_data: `cancel_manual:${broadcastId}` }]
+    ]
+  };
+  return tgSend(chatId, msg, { reply_markup: buttons });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -435,6 +337,72 @@ async function processUpdate(update) {
     const chatId = String(query.message?.chat?.id);
     const data = query.data || '';
     console.log(`[WEBHOOK] callback_query from ${chatId}: ${data}`);
+
+    
+    if (data === 'start_manual_build') {
+      const user = await getUserProfile(chatId);
+      if (!user) return;
+      await tgAnswer(query.id, 'جاري البدء...');
+      await startManualBroadcast(user, chatId);
+      return;
+    }
+
+    if (data.startsWith('submit_manual:')) {
+      const broadcastId = data.replace('submit_manual:', '');
+      const broadcast = await fbGet(`radios/${broadcastId}`);
+      if (!broadcast) return;
+      broadcast.status = 'pending';
+      await fbSet(`radios/${broadcastId}`, broadcast);
+      await tgAnswer(query.id, 'تم الإرسال!');
+      await tgSend(chatId, '✅ تم الإرسال للمشرف للاعتماد.');
+      
+      const { topic, class: classLabel, grade, date: dateStr, slides, ambassadorId } = broadcast;
+      const contentBody = formatBroadcast(topic, classLabel, dateStr, slides);
+      const supervisorId = await findSupervisorForGrade(grade);
+      const buttons = {
+        inline_keyboard: [
+          [{ text: '✅ اعتماد الإذاعة', callback_data: `approve_broadcast:${broadcastId}` }],
+          [{ text: '⚠️ طلب تعديل', callback_data: `supervisor_request_edit:${broadcastId}` }]
+        ]
+      };
+      const supervisorMsg = `🎙 *إذاعة يدوية بانتظار الاعتماد (فصل ${classLabel}):*
+
+` + contentBody;
+      await tgSend(supervisorId, supervisorMsg, { reply_markup: buttons });
+      
+      const superAdminIds = await getAllSuperAdminIds();
+      for (const sId of superAdminIds) {
+        if (String(sId) !== String(supervisorId) && String(sId) !== String(ambassadorId)) {
+          await tgSend(sId, `👑 *[نسخة المشرف العام]*
+` + supervisorMsg, { reply_markup: buttons });
+        }
+      }
+      return;
+    }
+
+    if (data.startsWith('request_ambassador_edit:')) {
+      const broadcastId = data.replace('request_ambassador_edit:', '');
+      await fbSet(`userState/${chatId}`, { step: 'AWAITING_EDIT_SEC_NUM', broadcastId });
+      await tgAnswer(query.id, 'تعديل فقرة');
+      await tgSend(chatId, 'أرسل رقم الفقرة التي تريد تعديلها (1 إلى 5):');
+      return;
+    }
+
+    if (data.startsWith('cancel_manual:')) {
+      const broadcastId = data.replace('cancel_manual:', '');
+      await fbDel(`radios/${broadcastId}`);
+      await tgAnswer(query.id, 'تم الإلغاء');
+      await tgSend(chatId, '🔴 تم إلغاء الإذاعة بنجاح.');
+      return;
+    }
+    
+    if (data.startsWith('supervisor_request_edit:')) {
+      const broadcastId = data.replace('supervisor_request_edit:', '');
+      await fbSet(`userState/${chatId}`, { step: 'SUPERVISOR_EDIT_NOTE_MANUAL', broadcastId });
+      await tgAnswer(query.id, 'طلب تعديل');
+      await tgSend(chatId, 'أرسل رقم الفقرة + ملاحظة التعديل (مثال: 3 - يرجى تغيير الحديث):');
+      return;
+    }
 
     if (data.startsWith('login_type:')) {
       const selectedRole = data.split('login_type:')[1];
@@ -542,6 +510,86 @@ async function processUpdate(update) {
     const userState = await fbGet(`userState/${chatId}`).catch(() => null);
 
     // ── STATE: ENTER_STUDENT_NAMES (STEP BY STEP) ──
+    
+    if (userState?.step === 'MANUAL_BUILD_STEP') {
+      const { broadcastId, secIndex } = userState;
+      const broadcast = await fbGet(`radios/${broadcastId}`);
+      if (!broadcast) return;
+
+      broadcast.slides[secIndex].content = text;
+      const secNames = ['المقدمة', 'كلمة الصباح', 'الحديث الشريف', 'رسالة وتوجيه للطلاب', 'الخاتمة'];
+      
+      if (secIndex < 4) {
+        const nextIdx = secIndex + 1;
+        await fbSet(`radios/${broadcastId}`, broadcast);
+        await fbSet(`userState/${chatId}`, { step: 'MANUAL_BUILD_STEP', broadcastId, secIndex: nextIdx });
+        const prompts = [
+          '',
+          'أدخل (الفقرة الثانية - كلمة الصباح):',
+          'أدخل (الفقرة الثالثة - الحديث الشريف):',
+          'أدخل (الفقرة الرابعة - رسالة وتوجيه للطلاب):',
+          'أدخل (الفقرة الخامسة - الخاتمة):'
+        ];
+        await tgSend(chatId, prompts[nextIdx]);
+      } else {
+        await fbSet(`radios/${broadcastId}`, broadcast);
+        await fbDel(`userState/${chatId}`);
+        await sendManualPreview(chatId, broadcastId, broadcast);
+      }
+      return;
+    }
+
+    if (userState?.step === 'AWAITING_EDIT_SEC_NUM') {
+      const { broadcastId } = userState;
+      const num = parseInt(text);
+      if (isNaN(num) || num < 1 || num > 5) {
+        await tgSend(chatId, '❌ رجاءً أرسل رقماً صحيحاً من 1 إلى 5.');
+        return;
+      }
+      await fbSet(`userState/${chatId}`, { step: 'AWAITING_EDIT_SEC_TEXT', broadcastId, secIndex: num - 1 });
+      await tgSend(chatId, `أرسل النص الجديد للفقرة (${num}):`);
+      return;
+    }
+
+    if (userState?.step === 'AWAITING_EDIT_SEC_TEXT') {
+      const { broadcastId, secIndex } = userState;
+      const broadcast = await fbGet(`radios/${broadcastId}`);
+      if (broadcast) {
+        broadcast.slides[secIndex].content = text;
+        await fbSet(`radios/${broadcastId}`, broadcast);
+      }
+      await fbDel(`userState/${chatId}`);
+      await sendManualPreview(chatId, broadcastId, broadcast);
+      return;
+    }
+    
+    if (userState?.step === 'SUPERVISOR_EDIT_NOTE_MANUAL') {
+      const { broadcastId } = userState;
+      await fbDel(`userState/${chatId}`);
+      const broadcast = await fbGet(`radios/${broadcastId}`);
+      if (!broadcast) { await tgSend(chatId, '❌ الإذاعة غير موجودة.'); return; }
+      
+      const ambassadorId = broadcast.ambassadorId || ADMIN_CHAT_ID;
+      await tgSend(ambassadorId, 
+        `📌 *طلب تعديل من المشرف (فصل ${broadcast.class})*
+
+` +
+        `📝 *الملاحظة:* "${text}"
+
+` +
+        `✏️ استخدم زر (تعديل فقرة) لتعديل الإذاعة وإعادة إرسالها.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✏️ تعديل فقرة', callback_data: `request_ambassador_edit:${broadcastId}` }]
+            ]
+          }
+        }
+      );
+      await tgSend(chatId, '✅ تم إرسال التنبيه للسفير بنجاح.');
+      return;
+    }
+
     if (userState?.step === 'ENTER_STUDENT_NAMES') {
       const { broadcastId, secIndex, slides } = userState;
       slides[secIndex].student = text;
@@ -699,14 +747,13 @@ async function processUpdate(update) {
     }
 
     if (text === '/generate') {
-      // Send waiting message first, capture its message_id to edit it later
-      const waitMsg = await tgSend(chatId, `⏳ جاري التوليد بالذكاء الاصطناعي...`);
-      const waitMsgId = waitMsg?.result?.message_id || null;
-      // Fire generation asynchronously — Vercel will respond 200 to Telegram immediately
-      generateRadioBroadcast(user, waitMsgId).catch(e => {
-        console.error('[WEBHOOK] generateRadioBroadcast error:', e);
-        if (waitMsgId) tgEdit(chatId, waitMsgId, `❌ تعذر التوليد: ${e.message}`);
-        else tgSend(chatId, `❌ تعذر التوليد: ${e.message}`);
+      await tgSend(chatId, `📝 *نظام إنشاء الإذاعة المدرسية اليدوي*
+سيقوم البوت بإرشادك لكتابة الفقرات الـ 5 بالترتيب لدمجها في قالب إذاعي معتمد ورسمي.`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🚀 ابدأ كتابة الإذاعة', callback_data: `start_manual_build` }]
+          ]
+        }
       });
       return;
     }
